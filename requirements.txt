@@ -1,1 +1,10 @@
-
+pandas
+numpy
+yfinance
+openpyxl
+ta
+streamlit
+duckdb
+pyarrow
+plotly
+scikit-learn
