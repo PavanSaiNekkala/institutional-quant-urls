@@ -14,7 +14,10 @@ import plotly.express as px
 from pathlib import Path
 
 from analytics.trade_decision_engine import (
-    build_trade_decisions
+
+    build_trade_decisions,
+
+    calculate_market_regime
 )
 
 from analytics.realtime_market_engine import (
@@ -125,6 +128,7 @@ try:
         '''
         SELECT *
         FROM enriched_stocks
+        LIMIT 2000
         '''
     ).df()
 
@@ -296,7 +300,7 @@ min_score = st.sidebar.slider(
 
     100,
 
-    60
+    0
 )
 
 # =========================================================
@@ -335,6 +339,14 @@ filtered_df = build_trade_decisions(
 )
 
 # =========================================================
+# MARKET REGIME
+# =========================================================
+
+market_regime = calculate_market_regime(
+    filtered_df
+)
+
+# =========================================================
 # SIGNAL FILTER
 # =========================================================
 
@@ -353,6 +365,16 @@ if selected_signal != "All":
 
 st.title(
     "Institutional Quant Platform"
+)
+
+# =========================================================
+# MARKET REGIME DISPLAY
+# =========================================================
+
+st.markdown(
+    f"""
+    ## Market Regime: {market_regime}
+    """
 )
 
 st.markdown("---")
@@ -424,10 +446,6 @@ priority_df = priority_df.drop(
     columns=["Signal Rank"]
 )
 
-# =========================================================
-# TOP 50 OUTPUT
-# =========================================================
-
 st.dataframe(
 
     priority_df.head(50),
@@ -450,40 +468,24 @@ col1.metric(
     len(filtered_df)
 )
 
-if "Institutional Score" in filtered_df.columns:
+avg_score = round(
+    filtered_df[
+        "Institutional Score"
+    ].mean(),
+    2
+)
 
-    avg_score = round(
-
-        filtered_df[
-            "Institutional Score"
-        ].mean(),
-
-        2
-    )
-
-else:
-
-    avg_score = 0
+avg_alpha = round(
+    filtered_df[
+        "Alpha Score"
+    ].mean(),
+    2
+)
 
 col2.metric(
     "Avg Institutional Score",
     avg_score
 )
-
-if "Alpha Score" in filtered_df.columns:
-
-    avg_alpha = round(
-
-        filtered_df[
-            "Alpha Score"
-        ].mean(),
-
-        2
-    )
-
-else:
-
-    avg_alpha = 0
 
 col3.metric(
     "Avg Alpha Score",
@@ -507,27 +509,19 @@ if "Sector" in filtered_df.columns:
         "Sector Distribution"
     )
 
-    try:
+    sector_chart = px.pie(
 
-        sector_chart = px.pie(
+        filtered_df,
 
-            filtered_df,
+        names="Sector",
 
-            names="Sector",
+        title="Sector Allocation"
+    )
 
-            title="Sector Allocation"
-        )
-
-        st.plotly_chart(
-            sector_chart,
-            use_container_width=True
-        )
-
-    except:
-
-        st.warning(
-            "Sector chart unavailable."
-        )
+    st.plotly_chart(
+        sector_chart,
+        use_container_width=True
+    )
 
 # =========================================================
 # ALPHA DISTRIBUTION
@@ -539,29 +533,21 @@ if "Alpha Score" in filtered_df.columns:
         "Alpha Score Distribution"
     )
 
-    try:
+    alpha_chart = px.histogram(
 
-        alpha_chart = px.histogram(
+        filtered_df,
 
-            filtered_df,
+        x="Alpha Score",
 
-            x="Alpha Score",
+        nbins=20,
 
-            nbins=20,
+        title="Alpha Score Distribution"
+    )
 
-            title="Alpha Score Distribution"
-        )
-
-        st.plotly_chart(
-            alpha_chart,
-            use_container_width=True
-        )
-
-    except:
-
-        st.warning(
-            "Alpha chart unavailable."
-        )
+    st.plotly_chart(
+        alpha_chart,
+        use_container_width=True
+    )
 
 # =========================================================
 # PORTFOLIO SECTION
@@ -603,14 +589,6 @@ if not portfolio_df.empty:
 
         use_container_width=True
     )
-
-else:
-
-    st.warning(
-        "Portfolio data unavailable."
-    )
-
-st.markdown("---")
 
 # =========================================================
 # TOP QUANT LEADERS
