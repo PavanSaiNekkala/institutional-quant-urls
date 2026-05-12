@@ -1,4 +1,8 @@
 # =========================================================
+# LIGHTWEIGHT CLOUD STREAMLIT APP
+# =========================================================
+
+# =========================================================
 # IMPORTS
 # =========================================================
 
@@ -9,25 +13,12 @@ import plotly.express as px
 
 from pathlib import Path
 
-from streamlit_autorefresh import (
-    st_autorefresh
+from analytics.trade_decision_engine import (
+    build_trade_decisions
 )
 
 from analytics.realtime_market_engine import (
-
-    fetch_live_market_data,
-
-    get_top_gainers,
-
-    get_top_losers,
-
-    get_volume_shocks,
-
-    calculate_market_breadth
-)
-
-from analytics.trade_decision_engine import (
-    build_trade_decisions
+    fetch_live_market_data
 )
 
 # =========================================================
@@ -44,15 +35,10 @@ st.set_page_config(
 )
 
 # =========================================================
-# AUTO REFRESH
+# LIVE MARKET SWITCH
 # =========================================================
 
-st_autorefresh(
-
-    interval=60000,
-
-    key="market_refresh"
-)
+ENABLE_LIVE_MARKET = False
 
 # =========================================================
 # PATHS
@@ -61,8 +47,11 @@ st_autorefresh(
 BASE_DIR = Path(__file__).resolve().parent
 
 DB_FILE = (
+
     BASE_DIR
+
     / "database"
+
     / "institutional_quant.db"
 )
 
@@ -70,24 +59,45 @@ DB_FILE = (
 # DATABASE CONNECTION
 # =========================================================
 
-conn = duckdb.connect(
-    str(DB_FILE)
-)
+try:
+
+    conn = duckdb.connect(
+        str(DB_FILE),
+        read_only=True
+    )
+
+except Exception as e:
+
+    st.error(
+        f"Database Connection Failed : {e}"
+    )
+
+    st.stop()
 
 # =========================================================
 # CHECK TABLES
 # =========================================================
 
-tables = conn.execute(
-    '''
-    SHOW TABLES
-    '''
-).fetchall()
+try:
 
-tables = [
-    table[0]
-    for table in tables
-]
+    tables = conn.execute(
+        '''
+        SHOW TABLES
+        '''
+    ).fetchall()
+
+    tables = [
+        table[0]
+        for table in tables
+    ]
+
+except Exception as e:
+
+    st.error(
+        f"Table Detection Failed : {e}"
+    )
+
+    st.stop()
 
 # =========================================================
 # VALIDATE DATABASE
@@ -99,11 +109,7 @@ if "enriched_stocks" not in tables:
         """
         enriched_stocks table not found.
 
-        Please run:
-
-        python main.py
-
-        before launching Streamlit.
+        Please run main.py locally first.
         """
     )
 
@@ -113,32 +119,50 @@ if "enriched_stocks" not in tables:
 # LOAD MAIN DATA
 # =========================================================
 
-df = conn.execute(
-    '''
-    SELECT *
-    FROM enriched_stocks
-    '''
-).df()
+try:
+
+    df = conn.execute(
+        '''
+        SELECT *
+        FROM enriched_stocks
+        LIMIT 500
+        '''
+    ).df()
+
+except Exception as e:
+
+    st.error(
+        f"Data Loading Failed : {e}"
+    )
+
+    st.stop()
 
 # =========================================================
 # LOAD PORTFOLIO
 # =========================================================
 
-if "institutional_portfolio" in tables:
+try:
 
-    portfolio_df = conn.execute(
-        '''
-        SELECT *
-        FROM institutional_portfolio
-        '''
-    ).df()
+    if "institutional_portfolio" in tables:
 
-else:
+        portfolio_df = conn.execute(
+            '''
+            SELECT *
+            FROM institutional_portfolio
+            LIMIT 100
+            '''
+        ).df()
+
+    else:
+
+        portfolio_df = pd.DataFrame()
+
+except:
 
     portfolio_df = pd.DataFrame()
 
 # =========================================================
-# CLEAN NUMERIC DATA
+# NUMERIC CLEANING
 # =========================================================
 
 numeric_columns = [
@@ -151,17 +175,11 @@ numeric_columns = [
 
     "ADX",
 
-    "MACD",
-
-    "Market Cap",
-
     "Buy Probability",
 
-    "Prediction Confidence",
+    "Current Price",
 
-    "Portfolio Weight",
-
-    "Current Price"
+    "Portfolio Weight"
 ]
 
 for column in numeric_columns:
@@ -179,6 +197,14 @@ for column in numeric_columns:
 # LIVE MARKET DATA
 # =========================================================
 
+@st.cache_data(ttl=300)
+
+def load_live_market_data(symbols):
+
+    return fetch_live_market_data(
+        symbols
+    )
+
 if "Validated Symbol" in df.columns:
 
     symbols = df[
@@ -191,29 +217,15 @@ else:
         "Stock"
     ].dropna().tolist()
 
-live_df = fetch_live_market_data(
-    symbols[:30]
-)
+if ENABLE_LIVE_MARKET:
 
-# =========================================================
-# LIVE ANALYTICS
-# =========================================================
+    live_df = load_live_market_data(
+        symbols[:5]
+    )
 
-top_gainers = get_top_gainers(
-    live_df
-)
+else:
 
-top_losers = get_top_losers(
-    live_df
-)
-
-volume_shocks = get_volume_shocks(
-    live_df
-)
-
-breadth = calculate_market_breadth(
-    live_df
-)
+    live_df = pd.DataFrame()
 
 # =========================================================
 # SIDEBAR
@@ -229,43 +241,27 @@ st.sidebar.title(
 
 if "Sector" in df.columns:
 
+    sectors = sorted(
+
+        df["Sector"]
+
+        .dropna()
+
+        .unique()
+
+        .tolist()
+    )
+
     selected_sector = st.sidebar.selectbox(
 
         "Select Sector",
 
-        ["All"] + sorted(
-            df["Sector"]
-            .dropna()
-            .unique()
-            .tolist()
-        )
+        ["All"] + sectors
     )
 
 else:
 
     selected_sector = "All"
-
-# =========================================================
-# QUANT FILTER
-# =========================================================
-
-if "Quant Rank" in df.columns:
-
-    selected_rank = st.sidebar.selectbox(
-
-        "Quant Rank",
-
-        ["All"] + sorted(
-            df["Quant Rank"]
-            .dropna()
-            .unique()
-            .tolist()
-        )
-    )
-
-else:
-
-    selected_rank = "All"
 
 # =========================================================
 # SIGNAL FILTER
@@ -305,7 +301,7 @@ min_score = st.sidebar.slider(
 )
 
 # =========================================================
-# FILTER DATA
+# FILTERING
 # =========================================================
 
 filtered_df = df.copy()
@@ -316,23 +312,16 @@ if (
 ):
 
     filtered_df = filtered_df[
+
         filtered_df["Sector"]
+
         == selected_sector
-    ]
-
-if (
-    selected_rank != "All"
-    and "Quant Rank" in filtered_df.columns
-):
-
-    filtered_df = filtered_df[
-        filtered_df["Quant Rank"]
-        == selected_rank
     ]
 
 if "Institutional Score" in filtered_df.columns:
 
     filtered_df = filtered_df[
+
         filtered_df[
             "Institutional Score"
         ] >= min_score
@@ -353,8 +342,10 @@ filtered_df = build_trade_decisions(
 if selected_signal != "All":
 
     filtered_df = filtered_df[
-        filtered_df["Trade Signal"]
-        == selected_signal
+
+        filtered_df[
+            "Trade Signal"
+        ] == selected_signal
     ]
 
 # =========================================================
@@ -392,17 +383,15 @@ priority_columns = [
 
 available_columns = [
 
-    col
+    column
 
-    for col in priority_columns
+    for column in priority_columns
 
-    if col in filtered_df.columns
+    if column in filtered_df.columns
 ]
 
 priority_df = filtered_df[
-
     available_columns
-
 ].copy()
 
 signal_order = {
@@ -446,51 +435,19 @@ st.dataframe(
 st.markdown("---")
 
 # =========================================================
-# MARKET BREADTH
-# =========================================================
-
-st.subheader(
-    "Live Market Breadth"
-)
-
-breadth_col1, breadth_col2, breadth_col3, breadth_col4 = st.columns(4)
-
-breadth_col1.metric(
-    "Advancing",
-    breadth["Advancing"]
-)
-
-breadth_col2.metric(
-    "Declining",
-    breadth["Declining"]
-)
-
-breadth_col3.metric(
-    "Unchanged",
-    breadth["Unchanged"]
-)
-
-breadth_col4.metric(
-    "Breadth Ratio",
-    breadth["Breadth Ratio"]
-)
-
-st.markdown("---")
-
-# =========================================================
-# MAIN KPIs
+# KPI SECTION
 # =========================================================
 
 col1, col2, col3, col4 = st.columns(4)
 
 col1.metric(
-    "Total Stocks",
+    "Stocks",
     len(filtered_df)
 )
 
 if "Institutional Score" in filtered_df.columns:
 
-    avg_inst_score = round(
+    avg_score = round(
 
         filtered_df[
             "Institutional Score"
@@ -501,16 +458,16 @@ if "Institutional Score" in filtered_df.columns:
 
 else:
 
-    avg_inst_score = 0
+    avg_score = 0
 
 col2.metric(
     "Avg Institutional Score",
-    avg_inst_score
+    avg_score
 )
 
 if "Alpha Score" in filtered_df.columns:
 
-    avg_alpha_score = round(
+    avg_alpha = round(
 
         filtered_df[
             "Alpha Score"
@@ -521,61 +478,16 @@ if "Alpha Score" in filtered_df.columns:
 
 else:
 
-    avg_alpha_score = 0
+    avg_alpha = 0
 
 col3.metric(
     "Avg Alpha Score",
-    avg_alpha_score
+    avg_alpha
 )
 
 col4.metric(
     "Portfolio Stocks",
     len(portfolio_df)
-)
-
-st.markdown("---")
-
-# =========================================================
-# TOP GAINERS / LOSERS
-# =========================================================
-
-gainer_col, loser_col = st.columns(2)
-
-with gainer_col:
-
-    st.subheader(
-        "Top Gainers"
-    )
-
-    st.dataframe(
-        top_gainers,
-        use_container_width=True
-    )
-
-with loser_col:
-
-    st.subheader(
-        "Top Losers"
-    )
-
-    st.dataframe(
-        top_losers,
-        use_container_width=True
-    )
-
-st.markdown("---")
-
-# =========================================================
-# VOLUME SHOCK MONITOR
-# =========================================================
-
-st.subheader(
-    "Volume Shock Monitor"
-)
-
-st.dataframe(
-    volume_shocks,
-    use_container_width=True
 )
 
 st.markdown("---")
@@ -590,19 +502,27 @@ if "Sector" in filtered_df.columns:
         "Sector Distribution"
     )
 
-    sector_chart = px.pie(
+    try:
 
-        filtered_df,
+        sector_chart = px.pie(
 
-        names="Sector",
+            filtered_df,
 
-        title="Sector Allocation"
-    )
+            names="Sector",
 
-    st.plotly_chart(
-        sector_chart,
-        use_container_width=True
-    )
+            title="Sector Allocation"
+        )
+
+        st.plotly_chart(
+            sector_chart,
+            use_container_width=True
+        )
+
+    except:
+
+        st.warning(
+            "Sector chart unavailable."
+        )
 
 # =========================================================
 # ALPHA DISTRIBUTION
@@ -614,120 +534,32 @@ if "Alpha Score" in filtered_df.columns:
         "Alpha Score Distribution"
     )
 
-    alpha_chart = px.histogram(
+    try:
 
-        filtered_df,
+        alpha_chart = px.histogram(
 
-        x="Alpha Score",
+            filtered_df,
 
-        nbins=20,
+            x="Alpha Score",
 
-        title="Alpha Score Distribution"
-    )
+            nbins=20,
 
-    st.plotly_chart(
-        alpha_chart,
-        use_container_width=True
-    )
+            title="Alpha Score Distribution"
+        )
 
-# =========================================================
-# TECHNICAL MOMENTUM MAP
-# =========================================================
+        st.plotly_chart(
+            alpha_chart,
+            use_container_width=True
+        )
 
-required_technical_columns = [
+    except:
 
-    "RSI",
-
-    "ADX",
-
-    "Alpha Score",
-
-    "Market Cap"
-]
-
-technical_available = all(
-
-    column in filtered_df.columns
-
-    for column in required_technical_columns
-)
-
-if technical_available:
-
-    st.subheader(
-        "Technical Momentum Map"
-    )
-
-    technical_chart = px.scatter(
-
-        filtered_df,
-
-        x="RSI",
-
-        y="ADX",
-
-        color="Alpha Score",
-
-        size="Market Cap",
-
-        hover_data=["Stock"],
-
-        title="RSI vs ADX Momentum"
-    )
-
-    st.plotly_chart(
-        technical_chart,
-        use_container_width=True
-    )
+        st.warning(
+            "Alpha chart unavailable."
+        )
 
 # =========================================================
-# AI PREDICTION MAP
-# =========================================================
-
-required_ml_columns = [
-
-    "Buy Probability",
-
-    "Prediction Confidence"
-]
-
-ml_available = all(
-
-    column in filtered_df.columns
-
-    for column in required_ml_columns
-)
-
-if ml_available:
-
-    st.subheader(
-        "AI Prediction Leaders"
-    )
-
-    ml_chart = px.scatter(
-
-        filtered_df,
-
-        x="Buy Probability",
-
-        y="Prediction Confidence",
-
-        color="Trade Signal",
-
-        size="Confidence",
-
-        hover_data=["Stock"],
-
-        title="AI Prediction Map"
-    )
-
-    st.plotly_chart(
-        ml_chart,
-        use_container_width=True
-    )
-
-# =========================================================
-# PORTFOLIO VIEW
+# PORTFOLIO SECTION
 # =========================================================
 
 st.subheader(
@@ -770,8 +602,10 @@ if not portfolio_df.empty:
 else:
 
     st.warning(
-        "Portfolio table not found."
+        "Portfolio data unavailable."
     )
+
+st.markdown("---")
 
 # =========================================================
 # TOP QUANT LEADERS
@@ -783,7 +617,7 @@ st.subheader(
 
 if "Alpha Score" in filtered_df.columns:
 
-    quant_leaders = filtered_df.sort_values(
+    quant_df = filtered_df.sort_values(
 
         by="Alpha Score",
 
@@ -792,7 +626,9 @@ if "Alpha Score" in filtered_df.columns:
     ).head(20)
 
     st.dataframe(
-        quant_leaders,
+
+        quant_df,
+
         use_container_width=True
     )
 
@@ -801,11 +637,13 @@ if "Alpha Score" in filtered_df.columns:
 # =========================================================
 
 with st.expander(
-    "View Full Enriched Dataset"
+    "View Full Dataset"
 ):
 
     st.dataframe(
+
         filtered_df,
+
         use_container_width=True
     )
 
@@ -820,7 +658,7 @@ st.caption(
 )
 
 # =========================================================
-# CLOSE DB
+# CLOSE DATABASE
 # =========================================================
 
 conn.close()
