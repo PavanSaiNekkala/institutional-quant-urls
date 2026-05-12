@@ -326,7 +326,6 @@ try:
             '''
             SELECT *
             FROM institutional_portfolio
-            LIMIT 100
             '''
         ).df()
 
@@ -490,7 +489,7 @@ min_score = st.sidebar.slider(
 
     100,
 
-    0
+    60
 )
 
 # =========================================================
