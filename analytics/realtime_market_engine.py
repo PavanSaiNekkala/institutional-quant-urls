@@ -4,7 +4,88 @@
 
 import pandas as pd
 import yfinance as yf
+# =========================================================
+# IMPORTS
+# =========================================================
 
+import pandas as pd
+import yfinance as yf
+
+# =========================================================
+# SAFE FLOAT
+# =========================================================
+
+def safe_float(value):
+
+    try:
+
+        return float(value)
+
+    except:
+
+        return 0
+
+# =========================================================
+# SAFE INT
+# =========================================================
+
+def safe_int(value):
+
+    try:
+
+        return int(value)
+
+    except:
+
+        return 0
+
+# =========================================================
+# FETCH LIVE MARKET DATA
+# =========================================================
+
+def fetch_live_market_data(symbols):
+
+    results = []
+
+    for symbol in symbols:
+
+        try:
+
+            ticker = yf.Ticker(symbol)
+
+            hist = ticker.history(
+                period="1d"
+            )
+
+            if hist.empty:
+
+                continue
+
+            current_close = safe_float(
+                hist["Close"].iloc[-1]
+            )
+
+            current_volume = safe_int(
+                hist["Volume"].iloc[-1]
+            )
+
+            results.append({
+
+                "Stock": symbol,
+
+                "Current Price": round(
+                    current_close,
+                    2
+                ),
+
+                "Volume": current_volume
+            })
+
+        except:
+
+            pass
+
+    return pd.DataFrame(results)
 # =========================================================
 # SAFE FLOAT
 # =========================================================
