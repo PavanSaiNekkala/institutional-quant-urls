@@ -1,36 +1,121 @@
+# =========================================================
+# SYMBOL VALIDATOR
+# =========================================================
+
 import yfinance as yf
 
-EXCHANGE_SUFFIXES = [
-    ".NS",
-    ".BO",
-    ""
+# =========================================================
+# INVALID KEYWORDS
+# =========================================================
+
+INVALID_KEYWORDS = [
+
+    "ETF",
+
+    "LIQUID",
+
+    "GOLD",
+
+    "SILVER",
+
+    "BEES",
+
+    "FUND",
+
+    "INDEX"
 ]
 
-def validate_symbol(stock):
+# =========================================================
+# VALIDATE SYMBOL
+# =========================================================
 
-    stock = str(stock).replace(".NS", "").replace(".BO", "")
+def validate_symbol(symbol):
 
-    for suffix in EXCHANGE_SUFFIXES:
+    try:
 
-        symbol = stock + suffix
+        if symbol is None:
 
-        try:
+            return {
 
-            ticker = yf.Ticker(symbol)
+                "valid": False,
 
-            hist = ticker.history(period="5d")
+                "symbol": symbol
+            }
 
-            if not hist.empty:
+        symbol = str(symbol).strip().upper()
+
+        # =============================================
+        # REMOVE EMPTY
+        # =============================================
+
+        if symbol == "":
+
+            return {
+
+                "valid": False,
+
+                "symbol": symbol
+            }
+
+        # =============================================
+        # REMOVE ETF / MF
+        # =============================================
+
+        for keyword in INVALID_KEYWORDS:
+
+            if keyword in symbol:
 
                 return {
-                    "valid": True,
+
+                    "valid": False,
+
                     "symbol": symbol
                 }
 
-        except:
-            continue
+        # =============================================
+        # ENSURE .NS
+        # =============================================
 
-    return {
-        "valid": False,
-        "symbol": None
-    }
+        if not symbol.endswith(".NS"):
+
+            symbol = f"{symbol}.NS"
+
+        # =============================================
+        # QUICK VALIDATION
+        # =============================================
+
+        ticker = yf.Ticker(symbol)
+
+        info = ticker.fast_info
+
+        last_price = info.get(
+
+            "lastPrice",
+
+            None
+        )
+
+        if last_price is None:
+
+            return {
+
+                "valid": False,
+
+                "symbol": symbol
+            }
+
+        return {
+
+            "valid": True,
+
+            "symbol": symbol
+        }
+
+    except Exception:
+
+        return {
+
+            "valid": False,
+
+            "symbol": symbol
+        }
