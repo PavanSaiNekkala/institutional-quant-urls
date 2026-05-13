@@ -56,7 +56,7 @@ from backtesting.backtest_engine import (
 
 CPU_COUNT = multiprocessing.cpu_count()
 
-MAX_WORKERS = 15
+MAX_WORKERS = 8
 
 # =========================================================
 # BATCH CONFIG
@@ -64,7 +64,7 @@ MAX_WORKERS = 15
 
 BATCH_SIZE = 100
 
-BATCH_SLEEP = 2
+BATCH_SLEEP = 5
 
 # =========================================================
 # PATHS
