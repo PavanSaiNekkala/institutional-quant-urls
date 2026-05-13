@@ -42,9 +42,7 @@ from analytics.portfolio_engine import (
 )
 
 from ml.ml_prediction_engine import (
-
     train_ml_model,
-
     generate_predictions
 )
 
@@ -109,30 +107,6 @@ DATABASE_DIR.mkdir(
 
 LOG_DIR.mkdir(
     exist_ok=True
-)
-
-# =========================================================
-# OUTPUT FILES
-# =========================================================
-
-OUTPUT_FILE = (
-    OUTPUT_DIR
-    / "enriched_stock_data.xlsx"
-)
-
-PORTFOLIO_FILE = (
-    OUTPUT_DIR
-    / "institutional_portfolio.xlsx"
-)
-
-BACKTEST_FILE = (
-    OUTPUT_DIR
-    / "backtest_results.xlsx"
-)
-
-FAILED_FILE = (
-    OUTPUT_DIR
-    / "failed_symbols.xlsx"
 )
 
 # =========================================================
@@ -607,10 +581,6 @@ print("=" * 60)
 print("SAVING TO DUCKDB...")
 print("=" * 60)
 
-# =========================================================
-# CLEAR OLD TABLES
-# =========================================================
-
 conn.execute(
     """
     DROP TABLE IF EXISTS
@@ -664,7 +634,7 @@ conn.execute(
 )
 
 # =========================================================
-# EXPORT BACKTEST
+# EXPORT BACKTEST CSV
 # =========================================================
 
 if backtest_results is not None:
@@ -672,79 +642,191 @@ if backtest_results is not None:
     backtest_df = pd.DataFrame([{
 
         "CAGR":
-        backtest_results["CAGR"],
+        backtest_results.get(
+            "CAGR",
+            0
+        ),
 
         "Sharpe Ratio":
-        backtest_results[
-            "Sharpe Ratio"
-        ],
+        backtest_results.get(
+            "Sharpe Ratio",
+            0
+        ),
 
         "Max Drawdown":
-        backtest_results[
-            "Max Drawdown"
-        ],
+        backtest_results.get(
+            "Max Drawdown",
+            0
+        ),
 
         "Volatility":
-        backtest_results[
-            "Volatility"
-        ],
+        backtest_results.get(
+            "Volatility",
+            0
+        ),
 
         "Win Rate":
-        backtest_results[
-            "Win Rate"
-        ]
+        backtest_results.get(
+            "Win Rate",
+            0
+        )
     }])
 
-    backtest_df.to_excel(
+else:
 
-        BACKTEST_FILE,
+    backtest_df = pd.DataFrame()
+
+# =========================================================
+# EXPORT CSV FILES
+# =========================================================
+
+print("=" * 60)
+print("EXPORTING CSV FILES...")
+print("=" * 60)
+
+# =========================================================
+# ENRICHED STOCK DATA
+# =========================================================
+
+final_df.to_csv(
+
+    OUTPUT_DIR
+    / "enriched_stock_data.csv",
+
+    index=False
+)
+
+# =========================================================
+# PORTFOLIO
+# =========================================================
+
+portfolio_df.to_csv(
+
+    OUTPUT_DIR
+    / "institutional_portfolio.csv",
+
+    index=False
+)
+
+# =========================================================
+# FAILED SYMBOLS
+# =========================================================
+
+failed_df.to_csv(
+
+    OUTPUT_DIR
+    / "failed_symbols.csv",
+
+    index=False
+)
+
+# =========================================================
+# BACKTEST RESULTS
+# =========================================================
+
+if not backtest_df.empty:
+
+    backtest_df.to_csv(
+
+        OUTPUT_DIR
+        / "backtest_results.csv",
 
         index=False
     )
 
 # =========================================================
-# EXPORT FILES
+# EXPORT TOP PICKS
 # =========================================================
 
-portfolio_df.to_excel(
+top_picks_df = final_df.sort_values(
 
-    PORTFOLIO_FILE,
+    by="Composite Score",
+
+    ascending=False
+
+).head(50)
+
+top_picks_df.to_csv(
+
+    OUTPUT_DIR
+    / "top_institutional_picks.csv",
 
     index=False
 )
 
-failed_df.to_excel(
+# =========================================================
+# EXPORT STRONG BUYS
+# =========================================================
 
-    FAILED_FILE,
+strong_buy_df = final_df[
+
+    final_df[
+        "Trade Signal"
+    ].isin(
+        [
+            "Strong Buy",
+            "Buy"
+        ]
+    )
+]
+
+strong_buy_df.to_csv(
+
+    OUTPUT_DIR
+    / "strong_buy_stocks.csv",
 
     index=False
 )
 
-with pd.ExcelWriter(
+# =========================================================
+# EXPORT SECTOR LEADERS
+# =========================================================
 
-    OUTPUT_FILE,
+if "Sector" in final_df.columns:
 
-    engine="openpyxl"
+    sector_leaders = (
 
-) as writer:
+        final_df
 
-    final_df.to_excel(
+        .sort_values(
 
-        writer,
+            by="Composite Score",
 
-        sheet_name="Enriched Data",
+            ascending=False
+        )
+
+        .groupby("Sector")
+
+        .head(5)
+    )
+
+    sector_leaders.to_csv(
+
+        OUTPUT_DIR
+        / "sector_leaders.csv",
 
         index=False
     )
 
-    failed_df.to_excel(
+# =========================================================
+# EXPORT QUANT LEADERS
+# =========================================================
 
-        writer,
+quant_leaders = final_df.sort_values(
 
-        sheet_name="Failed Symbols",
+    by="Institutional Score",
 
-        index=False
-    )
+    ascending=False
+
+).head(100)
+
+quant_leaders.to_csv(
+
+    OUTPUT_DIR
+    / "top_quant_stocks.csv",
+
+    index=False
+)
 
 # =========================================================
 # CLOSE DATABASE
@@ -778,21 +860,6 @@ print(
 print(
     f"Execution Time : "
     f"{elapsed} sec"
-)
-
-print(
-    f"Output File : "
-    f"{OUTPUT_FILE}"
-)
-
-print(
-    f"Portfolio File : "
-    f"{PORTFOLIO_FILE}"
-)
-
-print(
-    f"Backtest File : "
-    f"{BACKTEST_FILE}"
 )
 
 print("=" * 60)
