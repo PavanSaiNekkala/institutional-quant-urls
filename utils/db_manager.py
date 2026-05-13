@@ -7,10 +7,14 @@ import duckdb
 from pathlib import Path
 
 # =========================================================
-# DATABASE PATH
+# BASE DIRECTORY
 # =========================================================
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# =========================================================
+# DATABASE DIRECTORY
+# =========================================================
 
 DATABASE_DIR = (
     BASE_DIR
@@ -21,13 +25,17 @@ DATABASE_DIR.mkdir(
     exist_ok=True
 )
 
+# =========================================================
+# DATABASE FILE
+# =========================================================
+
 DB_FILE = (
     DATABASE_DIR
     / "institutional_quant.db"
 )
 
 # =========================================================
-# CONNECTION
+# GET CONNECTION
 # =========================================================
 
 def get_connection():
