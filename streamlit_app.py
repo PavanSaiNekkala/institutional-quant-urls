@@ -1,21 +1,24 @@
 # =========================================================
 # INSTITUTIONAL - QUANT - URLS
-# CLEAN PROFESSIONAL DASHBOARD
+# PROFESSIONAL INSTITUTIONAL DASHBOARD
 # =========================================================
 
 # =========================================================
 # IMPORTS
 # =========================================================
 
+import io
+import duckdb
+import pytz
+import yfinance as yf
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import duckdb
-import pytz
 
 from pathlib import Path
 from datetime import datetime
+from plotly.subplots import make_subplots
 
 from analytics.trade_decision_engine import (
 
@@ -40,7 +43,7 @@ st.set_page_config(
 )
 
 # =========================================================
-# MINIMAL CSS
+# CUSTOM CSS
 # =========================================================
 
 st.markdown(
@@ -50,8 +53,13 @@ st.markdown(
     .main .block-container {
 
         padding-top: 1rem;
+        max-width: 1600px;
+    }
 
-        max-width: 1500px;
+    .stMetric {
+
+        border-radius: 12px;
+        padding: 10px;
     }
 
     .stDataFrame {
@@ -134,6 +142,14 @@ DB_FILE = (
     / "institutional_quant.db"
 )
 
+if not DB_FILE.exists():
+
+    st.error(
+        f"Database not found:\n{DB_FILE}"
+    )
+
+    st.stop()
+
 try:
 
     conn = duckdb.connect(
@@ -202,7 +218,9 @@ numeric_columns = [
 
     "RSI",
 
-    "ADX"
+    "ADX",
+
+    "Current Price"
 ]
 
 for column in numeric_columns:
@@ -240,16 +258,11 @@ else:
 st.sidebar.title(
     "Institutional Controls"
 )
-# =========================================================
-# SIDEBAR BRANDING
-# =========================================================
 
 st.sidebar.markdown("---")
 
 st.sidebar.markdown(
-    """
-    ## 📈 Institutional - Quant - Urls
-    """
+    "## 📈 Institutional - Quant - Urls"
 )
 
 st.sidebar.caption(
@@ -260,10 +273,6 @@ st.sidebar.caption(
 )
 
 st.sidebar.markdown("---")
-
-# =========================================================
-# SYSTEM STATUS
-# =========================================================
 
 st.sidebar.success(
     "🟢 Quant Engine Active"
@@ -282,9 +291,6 @@ st.sidebar.info(
 )
 
 st.sidebar.markdown("---")
-st.sidebar.caption(
-    "Live Quantitative Filtering Engine"
-)
 
 # =========================================================
 # LIVE UNIVERSE
@@ -358,6 +364,13 @@ min_score = st.sidebar.slider(
 
     60
 )
+
+# =========================================================
+# FILTER DATA
+# =========================================================
+
+filtered_df = df.copy()
+
 # =========================================================
 # STOCK SEARCH
 # =========================================================
@@ -385,11 +398,6 @@ if search_stock:
             na=False
         )
     ]
-# =========================================================
-# FILTER DATA
-# =========================================================
-
-filtered_df = df.copy()
 
 if selected_sector != "All":
 
@@ -437,6 +445,19 @@ with st.spinner(
     )
 
 # =========================================================
+# SIGNAL FILTER
+# =========================================================
+
+if selected_signal != "All":
+
+    filtered_df = filtered_df[
+
+        filtered_df[
+            "Trade Signal"
+        ] == selected_signal
+    ]
+
+# =========================================================
 # EMPTY CHECK
 # =========================================================
 
@@ -455,6 +476,7 @@ if filtered_df.empty:
 market_regime = calculate_market_regime(
     filtered_df
 )
+
 # =========================================================
 # TOP CONVICTION PICKS
 # =========================================================
@@ -486,18 +508,6 @@ watchlist_df = filtered_df[
     ascending=False
 
 ).head(25)
-# =========================================================
-# SIGNAL FILTER
-# =========================================================
-
-if selected_signal != "All":
-
-    filtered_df = filtered_df[
-
-        filtered_df[
-            "Trade Signal"
-        ] == selected_signal
-    ]
 
 # =========================================================
 # HEADER
@@ -530,16 +540,40 @@ with status_col1:
 
     current_hour = india_time.hour
 
-    if 9 <= current_hour <= 15:
+    market_open = (
+
+        (current_hour > 9)
+
+        or
+
+        (
+            current_hour == 9
+            and india_time.minute >= 15
+        )
+    )
+
+    market_close = (
+
+        current_hour < 15
+
+        or
+
+        (
+            current_hour == 15
+            and india_time.minute <= 30
+        )
+    )
+
+    if market_open and market_close:
 
         st.success(
-            "🟢 Indian Market Live"
+            "🟢 NSE Market Live"
         )
 
     else:
 
         st.warning(
-            "🔴 Market Closed"
+            "🔴 NSE Market Closed"
         )
 
 with status_col2:
@@ -555,7 +589,7 @@ with status_col3:
     )
 
 # =========================================================
-# KPI CALCULATIONS
+# KPI SECTION
 # =========================================================
 
 avg_score = round(
@@ -586,10 +620,6 @@ strong_buys = len(
     ]
 )
 
-# =========================================================
-# KPI SECTION
-# =========================================================
-
 metric1, metric2, metric3, metric4 = st.columns(4)
 
 metric1.metric(
@@ -612,7 +642,34 @@ metric4.metric(
     avg_confidence
 )
 
-st.markdown("---")
+# =========================================================
+# LOAD PRICE HISTORY
+# =========================================================
+
+@st.cache_data(ttl=1800)
+
+def load_price_history(stock):
+
+    try:
+
+        symbol = stock
+
+        if not symbol.endswith(".NS"):
+
+            symbol = f"{symbol}.NS"
+
+        ticker = yf.Ticker(symbol)
+
+        hist = ticker.history(
+            period="6mo"
+        )
+
+        return hist
+
+    except Exception:
+
+        return pd.DataFrame()
+
 # =========================================================
 # STOCK DETAIL ANALYTICS
 # =========================================================
@@ -633,9 +690,6 @@ selected_stock = st.selectbox(
         ].unique()
     )
 )
-# =========================================================
-# SELECTED STOCK DATA
-# =========================================================
 
 selected_df = filtered_df[
 
@@ -650,73 +704,48 @@ if not selected_df.empty:
 
     detail_col1, detail_col2, detail_col3, detail_col4 = st.columns(4)
 
-    with detail_col1:
-
-        st.metric(
-            "Current Price",
+    detail_col1.metric(
+        "Current Price",
+        round(
             stock_data.get(
                 "Current Price",
                 0
-            )
+            ),
+            2
         )
-
-    with detail_col2:
-
-        st.metric(
-            "Institutional Score",
-            round(
-                stock_data.get(
-                    "Institutional Score",
-                    0
-                ),
-                2
-            )
-        )
-
-    with detail_col3:
-
-        st.metric(
-            "Confidence",
-            round(
-                stock_data.get(
-                    "Confidence",
-                    0
-                ),
-                2
-            )
-        )
-
-    with detail_col4:
-
-        st.metric(
-            "Trade Signal",
-            stock_data.get(
-                "Trade Signal",
-                "N/A"
-            )
-        )
-
-    # =====================================================
-    # STOCK SUMMARY
-    # =====================================================
-
-    st.info(
-
-        f"""
-        Sector:
-        {stock_data.get('Sector', 'Unknown')}
-
-        | Market Cap:
-        {stock_data.get('Market Cap', 'N/A')}
-
-        | RSI:
-        {stock_data.get('RSI', 'N/A')}
-
-        | ADX:
-        {stock_data.get('ADX', 'N/A')}
-        """
     )
-    # =========================================================
+
+    detail_col2.metric(
+        "Institutional Score",
+        round(
+            stock_data.get(
+                "Institutional Score",
+                0
+            ),
+            2
+        )
+    )
+
+    detail_col3.metric(
+        "Confidence",
+        round(
+            stock_data.get(
+                "Confidence",
+                0
+            ),
+            2
+        )
+    )
+
+    detail_col4.metric(
+        "Trade Signal",
+        stock_data.get(
+            "Trade Signal",
+            "N/A"
+        )
+    )
+
+# =========================================================
 # PRICE VS TARGET
 # =========================================================
 
@@ -765,478 +794,275 @@ if not selected_df.empty:
         text_auto=True
     )
 
-    fig_price.update_layout(
-        height=400
-    )
-
     st.plotly_chart(
-
         fig_price,
-
         use_container_width=True
     )
-# =========================================================
-# TOP CONVICTION PICKS
-# =========================================================
-
-st.markdown("---")
-
-st.subheader(
-    "Top Institutional Conviction Picks"
-)
-
-conviction_columns = [
-
-    "Stock",
-
-    "Sector",
-
-    "Trade Signal",
-
-    "Current Price",
-
-    "Target Price",
-
-    "Confidence",
-
-    "Composite Score"
-]
-
-available_conviction_columns = [
-
-    col
-
-    for col in conviction_columns
-
-    if col in top_conviction_df.columns
-]
-
-st.dataframe(
-
-    top_conviction_df[
-        available_conviction_columns
-    ],
-
-    use_container_width=True,
-
-    height=350
-)
-# =========================================================
-# MAIN DASHBOARD LAYOUT
-# =========================================================
-
-left_col, right_col = st.columns([3.5, 1.2])
 
 # =========================================================
-# LEFT SIDE
-# =========================================================
-
-with left_col:
-
-    st.subheader(
-        "Top Institutional Trade Signals"
-    )
-
-    top_signals = filtered_df[
-
-        filtered_df[
-            "Trade Signal"
-        ].isin(
-
-            [
-                "Strong Buy",
-
-                "Buy"
-            ]
-        )
-    ].copy()
-
-    if top_signals.empty:
-
-        top_signals = filtered_df.head(20)
-
-    display_columns = [
-
-        "Stock",
-
-        "Sector",
-
-        "Trade Signal",
-
-        "Current Price",
-
-        "Target Price",
-
-        "Confidence",
-
-        "Composite Score"
-    ]
-
-    available_columns = [
-
-        col
-
-        for col in display_columns
-
-        if col in top_signals.columns
-    ]
-
-    st.dataframe(
-
-        top_signals[
-            available_columns
-        ].head(100),
-
-        use_container_width=True,
-
-        height=700
-    )
-
-# =========================================================
-# RIGHT SIDE
-# =========================================================
-
-with right_col:
-
-    st.subheader(
-        "Market Intelligence"
-    )
-
-    bullish_count = len(
-
-        filtered_df[
-
-            filtered_df[
-                "Trade Signal"
-            ].isin(
-
-                [
-                    "Strong Buy",
-
-                    "Buy"
-                ]
-            )
-        ]
-    )
-
-    bearish_count = len(
-
-        filtered_df[
-
-            filtered_df[
-                "Trade Signal"
-            ] == "Avoid"
-        ]
-    )
-
-    st.metric(
-        "Bullish Signals",
-        bullish_count
-    )
-
-    st.metric(
-        "Bearish Signals",
-        bearish_count
-    )
-
-    st.metric(
-        "Market Regime",
-        market_regime
-    )
-
-    if "Sector" in filtered_df.columns:
-
-        sector_series = (
-
-            filtered_df["Sector"]
-
-            .dropna()
-
-            .astype(str)
-        )
-
-        if not sector_series.empty:
-
-            top_sector = (
-
-                sector_series
-                .mode()
-                .iloc[0]
-            )
-
-        else:
-
-            top_sector = "Unknown"
-
-    else:
-
-        top_sector = "Unknown"
-
-    st.info(
-        f"Dominant Sector: {top_sector}"
-    )
-# =========================================================
-# INSTITUTIONAL ANALYTICS
+# TECHNICAL ANALYSIS
 # =========================================================
 
 st.markdown("---")
 
 st.subheader(
-    "Institutional Analytics"
+    "Technical Price Analysis"
 )
 
-chart_col1, chart_col2 = st.columns(2)
+hist_df = load_price_history(
+    selected_stock
+)
 
-# =========================================================
-# SIGNAL DISTRIBUTION
-# =========================================================
+if not hist_df.empty:
 
-with chart_col1:
+    hist_df["MA20"] = (
 
-    signal_counts = (
+        hist_df["Close"]
 
-        filtered_df[
-            "Trade Signal"
+        .rolling(20)
+
+        .mean()
+    )
+
+    hist_df["MA50"] = (
+
+        hist_df["Close"]
+
+        .rolling(50)
+
+        .mean()
+    )
+
+    delta = hist_df["Close"].diff()
+
+    gain = (
+
+        delta.where(
+            delta > 0,
+            0
+        )
+
+        .rolling(14)
+
+        .mean()
+    )
+
+    loss = (
+
+        -delta.where(
+            delta < 0,
+            0
+        )
+
+        .rolling(14)
+
+        .mean()
+    )
+
+    rs = gain / loss
+
+    hist_df["RSI"] = (
+
+        100
+
+        - (
+            100
+            / (1 + rs)
+        )
+    )
+
+    ema12 = hist_df["Close"].ewm(
+        span=12,
+        adjust=False
+    ).mean()
+
+    ema26 = hist_df["Close"].ewm(
+        span=26,
+        adjust=False
+    ).mean()
+
+    hist_df["MACD"] = ema12 - ema26
+
+    hist_df["Signal"] = (
+
+        hist_df["MACD"]
+
+        .ewm(
+            span=9,
+            adjust=False
+        )
+
+        .mean()
+    )
+
+    fig = make_subplots(
+
+        rows=4,
+
+        cols=1,
+
+        shared_xaxes=True,
+
+        vertical_spacing=0.03,
+
+        row_heights=[
+
+            0.5,
+
+            0.15,
+
+            0.15,
+
+            0.2
         ]
-
-        .value_counts()
-
-        .reset_index()
     )
 
-    signal_counts.columns = [
+    fig.add_trace(
 
-        "Signal",
+        go.Candlestick(
 
-        "Count"
-    ]
+            x=hist_df.index,
 
-    fig_signal = px.pie(
+            open=hist_df["Open"],
 
-        signal_counts,
+            high=hist_df["High"],
 
-        names="Signal",
+            low=hist_df["Low"],
 
-        values="Count",
+            close=hist_df["Close"],
 
-        title="Trade Signal Distribution"
+            name="Price"
+        ),
+
+        row=1,
+
+        col=1
     )
 
-    fig_signal.update_layout(
+    fig.add_trace(
 
-        height=450
+        go.Scatter(
+
+            x=hist_df.index,
+
+            y=hist_df["MA20"],
+
+            mode="lines",
+
+            name="MA20"
+        ),
+
+        row=1,
+
+        col=1
+    )
+
+    fig.add_trace(
+
+        go.Scatter(
+
+            x=hist_df.index,
+
+            y=hist_df["MA50"],
+
+            mode="lines",
+
+            name="MA50"
+        ),
+
+        row=1,
+
+        col=1
+    )
+
+    fig.add_trace(
+
+        go.Bar(
+
+            x=hist_df.index,
+
+            y=hist_df["Volume"],
+
+            name="Volume"
+        ),
+
+        row=2,
+
+        col=1
+    )
+
+    fig.add_trace(
+
+        go.Scatter(
+
+            x=hist_df.index,
+
+            y=hist_df["RSI"],
+
+            mode="lines",
+
+            name="RSI"
+        ),
+
+        row=3,
+
+        col=1
+    )
+
+    fig.add_trace(
+
+        go.Scatter(
+
+            x=hist_df.index,
+
+            y=hist_df["MACD"],
+
+            mode="lines",
+
+            name="MACD"
+        ),
+
+        row=4,
+
+        col=1
+    )
+
+    fig.add_trace(
+
+        go.Scatter(
+
+            x=hist_df.index,
+
+            y=hist_df["Signal"],
+
+            mode="lines",
+
+            name="Signal"
+        ),
+
+        row=4,
+
+        col=1
+    )
+
+    fig.update_layout(
+
+        height=1100,
+
+        title=f"{selected_stock} Institutional Technical Analysis",
+
+        xaxis_rangeslider_visible=False
     )
 
     st.plotly_chart(
 
-        fig_signal,
+        fig,
 
         use_container_width=True
     )
 
 # =========================================================
-# SECTOR DISTRIBUTION
-# =========================================================
-
-with chart_col2:
-
-    if "Sector" in filtered_df.columns:
-
-        sector_counts = (
-
-            filtered_df[
-                "Sector"
-            ]
-
-            .value_counts()
-
-            .head(10)
-
-            .reset_index()
-        )
-
-        sector_counts.columns = [
-
-            "Sector",
-
-            "Count"
-        ]
-
-        fig_sector = px.bar(
-
-            sector_counts,
-
-            x="Sector",
-
-            y="Count",
-
-            title="Top Sectors",
-
-            text_auto=True
-        )
-
-        fig_sector.update_layout(
-
-            height=450
-        )
-
-        st.plotly_chart(
-
-            fig_sector,
-
-            use_container_width=True
-        )
-
-# =========================================================
-# SCORE DISTRIBUTION
-# =========================================================
-
-st.markdown("---")
-
-score_col1, score_col2 = st.columns(2)
-
-with score_col1:
-
-    fig_score = px.histogram(
-
-        filtered_df,
-
-        x="Institutional Score",
-
-        nbins=30,
-
-        title="Institutional Score Distribution"
-    )
-
-    fig_score.update_layout(
-        height=450
-    )
-
-    st.plotly_chart(
-
-        fig_score,
-
-        use_container_width=True
-    )
-
-with score_col2:
-
-    fig_conf = px.scatter(
-
-        filtered_df,
-
-        x="Institutional Score",
-
-        y="Confidence",
-
-        color="Trade Signal",
-
-        hover_data=["Stock"],
-
-        title="Confidence vs Institutional Score"
-    )
-
-    fig_conf.update_layout(
-        height=450
-    )
-
-    st.plotly_chart(
-
-        fig_conf,
-
-        use_container_width=True
-    )
-# =========================================================
-# INSTITUTIONAL WATCHLIST
-# =========================================================
-
-st.markdown("---")
-
-st.subheader(
-    "Institutional Watchlist"
-)
-
-watchlist_columns = [
-
-    "Stock",
-
-    "Sector",
-
-    "Trade Signal",
-
-    "Current Price",
-
-    "Confidence",
-
-    "Institutional Score"
-]
-
-available_watchlist_columns = [
-
-    col
-
-    for col in watchlist_columns
-
-    if col in watchlist_df.columns
-]
-
-st.dataframe(
-
-    watchlist_df[
-        available_watchlist_columns
-    ],
-
-    use_container_width=True,
-
-    height=450
-)
-# =========================================================
-# QUANT LEADERS
-# =========================================================
-
-st.markdown("---")
-
-st.subheader(
-    "Top Quant Leaders"
-)
-
-quant_df = filtered_df.sort_values(
-
-    by="Composite Score",
-
-    ascending=False
-
-).head(25)
-
-st.dataframe(
-
-    quant_df[
-        available_columns
-    ],
-
-    use_container_width=True,
-
-    height=500
-)
-
-# =========================================================
-# FULL DATASET
-# =========================================================
-
-with st.expander(
-    "View Full Dataset"
-):
-
-    st.dataframe(
-
-        filtered_df,
-
-        use_container_width=True,
-
-        height=700
-    )
-# =========================================================
-# DOWNLOAD SECTION
+# DOWNLOADS
 # =========================================================
 
 st.markdown("---")
@@ -1266,26 +1092,31 @@ with download_col1:
 
 with download_col2:
 
-    excel_buffer = filtered_df.to_excel(
-        "temp_download.xlsx",
-        index=False
+    excel_buffer = io.BytesIO()
+
+    with pd.ExcelWriter(
+        excel_buffer,
+        engine="openpyxl"
+    ) as writer:
+
+        filtered_df.to_excel(
+            writer,
+            index=False
+        )
+
+    excel_buffer.seek(0)
+
+    st.download_button(
+
+        label="📥 Download Excel",
+
+        data=excel_buffer,
+
+        file_name="institutional_quant_data.xlsx",
+
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
-    with open(
-        "temp_download.xlsx",
-        "rb"
-    ) as f:
-
-        st.download_button(
-
-            label="📥 Download Excel",
-
-            data=f,
-
-            file_name="institutional_quant_data.xlsx",
-
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
 # =========================================================
 # FOOTER
 # =========================================================
