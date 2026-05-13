@@ -954,7 +954,57 @@ with st.expander(
 
         height=700
     )
+# =========================================================
+# DOWNLOAD SECTION
+# =========================================================
 
+st.markdown("---")
+
+st.subheader(
+    "Download Analytics"
+)
+
+download_col1, download_col2 = st.columns(2)
+
+with download_col1:
+
+    csv_data = filtered_df.to_csv(
+        index=False
+    )
+
+    st.download_button(
+
+        label="📥 Download CSV",
+
+        data=csv_data,
+
+        file_name="institutional_quant_data.csv",
+
+        mime="text/csv"
+    )
+
+with download_col2:
+
+    excel_buffer = filtered_df.to_excel(
+        "temp_download.xlsx",
+        index=False
+    )
+
+    with open(
+        "temp_download.xlsx",
+        "rb"
+    ) as f:
+
+        st.download_button(
+
+            label="📥 Download Excel",
+
+            data=f,
+
+            file_name="institutional_quant_data.xlsx",
+
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 # =========================================================
 # FOOTER
 # =========================================================
