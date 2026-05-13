@@ -175,6 +175,18 @@ except Exception as e:
     st.stop()
 
 # =========================================================
+# REMOVE DUPLICATES
+# =========================================================
+
+if "Stock" in df.columns:
+
+    df = df.drop_duplicates(
+
+        subset=["Stock"]
+
+    ).reset_index(drop=True)
+
+# =========================================================
 # CLEAN NUMERIC
 # =========================================================
 
@@ -241,9 +253,14 @@ live_universe_size = st.sidebar.slider(
 
     min_value=100,
 
-    max_value=len(df),
+    max_value=df["Stock"].nunique(),
 
-    value=min(300, len(df)),
+    value=min(
+
+        300,
+
+        df["Stock"].nunique()
+    ),
 
     step=100
 )
