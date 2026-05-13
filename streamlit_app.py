@@ -1,5 +1,5 @@
 # =========================================================
-# LIGHTWEIGHT CLOUD STREAMLIT APP
+# INSTITUTIONAL - QUANT - URLS
 # =========================================================
 
 # =========================================================
@@ -26,11 +26,62 @@ from analytics.trade_decision_engine import (
 
 st.set_page_config(
 
-    page_title="Institutional Quant Urls Platform",
+    page_title="Institutional - Quant - Urls",
 
     page_icon="📈",
 
-    layout="wide"
+    layout="wide",
+
+    initial_sidebar_state="expanded"
+)
+
+# =========================================================
+# CUSTOM CSS
+# =========================================================
+
+st.markdown(
+    """
+    <style>
+
+    .main {
+        padding-top: 1rem;
+    }
+
+    .stMetric {
+        background-color: #111827;
+        padding: 15px;
+        border-radius: 12px;
+        border: 1px solid #1f2937;
+    }
+
+    .metric-title {
+        font-size: 14px;
+        color: #9ca3af;
+    }
+
+    .main-title {
+        font-size: 42px;
+        font-weight: 800;
+        color: white;
+        margin-bottom: 0px;
+    }
+
+    .sub-title {
+        font-size: 16px;
+        color: #9ca3af;
+        margin-top: -10px;
+    }
+
+    .section-title {
+        font-size: 26px;
+        font-weight: 700;
+        margin-top: 10px;
+        margin-bottom: 10px;
+    }
+
+    </style>
+    """,
+    unsafe_allow_html=True
 )
 
 # =========================================================
@@ -50,45 +101,23 @@ def normalize_sector(sector):
         "it services": "Technology",
         "software": "Technology",
         "information technology": "Technology",
-        "tech": "Technology",
 
-        "banks": "Banking",
         "banking": "Banking",
+        "banks": "Banking",
 
         "financial services": "Financial Services",
-        "finance": "Financial Services",
-        "nbfc": "Financial Services",
 
         "pharma": "Healthcare",
-        "pharmaceuticals": "Healthcare",
-        "healthcare": "Healthcare",
 
         "oil & gas": "Energy",
-        "energy": "Energy",
-        "power": "Energy",
 
         "fmcg": "Consumer",
-        "consumer goods": "Consumer",
 
-        "automobile": "Automobile",
         "auto": "Automobile",
 
-        "capital goods": "Industrials",
-        "engineering": "Industrials",
-
         "metals": "Metals & Mining",
-        "steel": "Metals & Mining",
 
-        "cement": "Materials",
-        "chemicals": "Chemicals",
-
-        "telecom": "Telecommunication",
-
-        "media": "Media",
-
-        "real estate": "Real Estate",
-
-        "textiles": "Textiles"
+        "chemicals": "Chemicals"
     }
 
     for key, value in sector_mapping.items():
@@ -100,7 +129,7 @@ def normalize_sector(sector):
     return "Other"
 
 # =========================================================
-# PATHS
+# DATABASE
 # =========================================================
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -114,21 +143,19 @@ DB_FILE = (
     / "institutional_quant.db"
 )
 
-# =========================================================
-# DATABASE CONNECTION
-# =========================================================
-
 try:
 
     conn = duckdb.connect(
+
         str(DB_FILE),
+
         read_only=True
     )
 
 except Exception as e:
 
     st.error(
-        f"Database Connection Failed : {e}"
+        f"Database Connection Failed: {e}"
     )
 
     st.stop()
@@ -142,10 +169,10 @@ except Exception as e:
 def load_database():
 
     return conn.execute(
-        '''
+        """
         SELECT *
         FROM enriched_stocks
-        '''
+        """
     ).df()
 
 try:
@@ -155,13 +182,13 @@ try:
 except Exception as e:
 
     st.error(
-        f"Data Loading Failed : {e}"
+        f"Data Loading Failed: {e}"
     )
 
     st.stop()
 
 # =========================================================
-# NUMERIC CLEANING
+# CLEAN NUMERIC
 # =========================================================
 
 numeric_columns = [
@@ -170,11 +197,11 @@ numeric_columns = [
 
     "Alpha Score",
 
+    "Buy Probability",
+
     "RSI",
 
-    "ADX",
-
-    "Buy Probability"
+    "ADX"
 ]
 
 for column in numeric_columns:
@@ -209,15 +236,19 @@ else:
 # SIDEBAR
 # =========================================================
 
-st.sidebar.title(
-    "Institutional Controls"
+st.sidebar.markdown(
+    "## Institutional Controls"
 )
+
+st.sidebar.caption(
+    "Live Quantitative Filtering Engine"
+)
+
+st.sidebar.markdown("---")
 
 # =========================================================
 # REFRESH BUTTON
 # =========================================================
-
-st.sidebar.markdown("---")
 
 if st.sidebar.button(
     "🔄 Refresh Market Data"
@@ -228,7 +259,7 @@ if st.sidebar.button(
     st.rerun()
 
 # =========================================================
-# LIVE UNIVERSE SIZE
+# LIVE UNIVERSE
 # =========================================================
 
 live_universe_size = st.sidebar.slider(
@@ -245,19 +276,7 @@ live_universe_size = st.sidebar.slider(
 )
 
 # =========================================================
-# SIDEBAR WARNING
-# =========================================================
-
-st.sidebar.warning(
-
-    """
-    Larger universes may slow
-    Streamlit Cloud performance.
-    """
-)
-
-# =========================================================
-# SECTOR FILTER
+# FILTERS
 # =========================================================
 
 sectors = sorted(
@@ -273,14 +292,10 @@ sectors = sorted(
 
 selected_sector = st.sidebar.selectbox(
 
-    "Select Sector",
+    "Sector",
 
     ["All"] + sectors
 )
-
-# =========================================================
-# SIGNAL FILTER
-# =========================================================
 
 selected_signal = st.sidebar.selectbox(
 
@@ -299,10 +314,6 @@ selected_signal = st.sidebar.selectbox(
         "Avoid"
     ]
 )
-
-# =========================================================
-# SCORE FILTER
-# =========================================================
 
 min_score = st.sidebar.slider(
 
@@ -338,28 +349,21 @@ filtered_df = filtered_df[
 ]
 
 # =========================================================
-# SORT BEFORE LIVE ENGINE
+# LIMIT LIVE ENGINE
 # =========================================================
 
-if "Institutional Score" in filtered_df.columns:
+filtered_df = filtered_df.sort_values(
 
-    filtered_df = filtered_df.sort_values(
+    by="Institutional Score",
 
-        by="Institutional Score",
+    ascending=False
 
-        ascending=False
-    )
-
-# =========================================================
-# LIMIT LIVE PROCESSING
-# =========================================================
-
-filtered_df = filtered_df.head(
+).head(
     live_universe_size
 )
 
 # =========================================================
-# BUILD TRADE DECISIONS
+# LIVE ENGINE
 # =========================================================
 
 with st.spinner(
@@ -369,10 +373,6 @@ with st.spinner(
     filtered_df = build_trade_decisions(
         filtered_df
     )
-
-# =========================================================
-# EMPTY FAILSAFE
-# =========================================================
 
 if filtered_df.empty:
 
@@ -404,16 +404,23 @@ if selected_signal != "All":
     ]
 
 # =========================================================
-# TITLE
+# HEADER
 # =========================================================
 
-st.title(
-    "Institutional Quant Platform"
+st.markdown(
+
+    """
+    <div class="main-title">
+        Institutional - Quant - Urls
+    </div>
+
+    <div class="sub-title">
+        AI-Powered Institutional Quantitative Analytics Platform
+    </div>
+    """,
+
+    unsafe_allow_html=True
 )
-
-# =========================================================
-# LAST UPDATED
-# =========================================================
 
 st.caption(
 
@@ -423,59 +430,45 @@ st.caption(
 )
 
 # =========================================================
-# MARKET STATUS
+# STATUS BAR
 # =========================================================
 
-current_hour = datetime.now().hour
+col_a, col_b = st.columns([1, 2])
 
-if 9 <= current_hour <= 15:
+with col_a:
 
-    st.success(
-        "🟢 Indian Market Live"
+    current_hour = datetime.now().hour
+
+    if 9 <= current_hour <= 15:
+
+        st.success(
+            "🟢 Indian Market Live"
+        )
+
+    else:
+
+        st.warning(
+            "🔴 Market Closed"
+        )
+
+with col_b:
+
+    st.info(
+
+        f"""
+        ⚡ Live Quant Engine Active
+        
+        Universe Size: {live_universe_size} Stocks
+        
+        Market Regime: {market_regime}
+        """
     )
-
-else:
-
-    st.warning(
-        "🔴 Market Closed"
-    )
-
-# =========================================================
-# ENGINE STATUS
-# =========================================================
-
-st.info(
-
-    f"""
-    ⚡ Live Quant Engine Active
-
-    Universe Size: {live_universe_size} stocks
-    """
-)
-
-# =========================================================
-# MARKET REGIME
-# =========================================================
-
-st.markdown(
-
-    f"""
-    ## Market Regime: {market_regime}
-    """
-)
-
-st.markdown("---")
 
 # =========================================================
 # KPI SECTION
 # =========================================================
 
 col1, col2, col3, col4 = st.columns(4)
-
-col1.metric(
-    "Live Stocks",
-    len(filtered_df)
-)
 
 avg_score = round(
 
@@ -504,14 +497,29 @@ avg_confidence = round(
     2
 )
 
+strong_buys = len(
+
+    filtered_df[
+
+        filtered_df[
+            "Trade Signal"
+        ] == "Strong Buy"
+    ]
+)
+
+col1.metric(
+    "Live Stocks",
+    len(filtered_df)
+)
+
 col2.metric(
     "Avg Institutional Score",
     avg_score
 )
 
 col3.metric(
-    "Avg Alpha Score",
-    avg_alpha
+    "Strong Buys",
+    strong_buys
 )
 
 col4.metric(
@@ -522,11 +530,12 @@ col4.metric(
 st.markdown("---")
 
 # =========================================================
-# TOP TRADE DECISIONS
+# TOP SIGNALS
 # =========================================================
 
-st.subheader(
-    "Top Institutional Trade Signals"
+st.markdown(
+    '<div class="section-title">Top Institutional Trade Signals</div>',
+    unsafe_allow_html=True
 )
 
 top_signals = filtered_df[
@@ -543,10 +552,6 @@ top_signals = filtered_df[
     )
 
 ].copy()
-
-# =========================================================
-# FALLBACK IF EMPTY
-# =========================================================
 
 if top_signals.empty:
 
@@ -594,11 +599,13 @@ available_columns = [
 # MAIN TABLE
 # =========================================================
 
+styled_df = top_signals[
+    available_columns
+].head(50)
+
 st.dataframe(
 
-    top_signals[
-        available_columns
-    ].head(50),
+    styled_df,
 
     use_container_width=True,
 
@@ -608,11 +615,12 @@ st.dataframe(
 st.markdown("---")
 
 # =========================================================
-# TOP QUANT LEADERS
+# QUANT LEADERS
 # =========================================================
 
-st.subheader(
-    "Top Quant Leaders"
+st.markdown(
+    '<div class="section-title">Top Quant Leaders</div>',
+    unsafe_allow_html=True
 )
 
 quant_df = filtered_df.sort_values(
@@ -654,7 +662,7 @@ with st.expander(
 st.markdown("---")
 
 st.caption(
-    "Institutional Quant Platform | Stable Live Quant Engine"
+    "Institutional - Quant - Urls | Stable Live Quantitative Analytics Engine"
 )
 
 # =========================================================
