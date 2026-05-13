@@ -1,10 +1,23 @@
+# =========================================================
+# RETRY ENGINE
+# =========================================================
+
 import time
 
+# =========================================================
+# RETRY REQUEST
+# =========================================================
+
 def retry_request(
+
     func,
-    retries=3,
+
+    retries=5,
+
     delay=2
 ):
+
+    last_exception = None
 
     for attempt in range(retries):
 
@@ -14,7 +27,10 @@ def retry_request(
 
         except Exception as e:
 
-            if attempt == retries - 1:
-                raise e
+            last_exception = e
 
-            time.sleep(delay)
+            time.sleep(
+                delay
+            )
+
+    raise last_exception
