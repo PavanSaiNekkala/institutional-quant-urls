@@ -9,6 +9,8 @@
 
 import streamlit as st
 import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
 import duckdb
 import pytz
 
@@ -238,7 +240,48 @@ else:
 st.sidebar.title(
     "Institutional Controls"
 )
+# =========================================================
+# SIDEBAR BRANDING
+# =========================================================
 
+st.sidebar.markdown("---")
+
+st.sidebar.markdown(
+    """
+    ## 📈 Institutional - Quant - Urls
+    """
+)
+
+st.sidebar.caption(
+    """
+    AI-Powered Institutional
+    Quantitative Analytics Platform
+    """
+)
+
+st.sidebar.markdown("---")
+
+# =========================================================
+# SYSTEM STATUS
+# =========================================================
+
+st.sidebar.success(
+    "🟢 Quant Engine Active"
+)
+
+st.sidebar.info(
+    "⚡ Live Institutional Analytics"
+)
+
+st.sidebar.info(
+    "🤖 ML Prediction Engine Enabled"
+)
+
+st.sidebar.info(
+    "📊 Backtesting Engine Enabled"
+)
+
+st.sidebar.markdown("---")
 st.sidebar.caption(
     "Live Quantitative Filtering Engine"
 )
