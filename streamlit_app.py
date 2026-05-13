@@ -22,10 +22,6 @@ from analytics.trade_decision_engine import (
     calculate_market_regime
 )
 
-from analytics.realtime_market_engine import (
-    fetch_live_market_data
-)
-
 # =========================================================
 # PAGE CONFIG
 # =========================================================
@@ -46,7 +42,7 @@ st.set_page_config(
 ENABLE_LIVE_MARKET = True
 
 # =========================================================
-# SECTOR NORMALIZATION ENGINE
+# SECTOR NORMALIZATION
 # =========================================================
 
 def normalize_sector(sector):
@@ -146,7 +142,7 @@ except Exception as e:
     st.stop()
 
 # =========================================================
-# LOAD DATA
+# LOAD DATABASE
 # =========================================================
 
 @st.cache_data(ttl=300)
@@ -186,9 +182,7 @@ numeric_columns = [
 
     "ADX",
 
-    "Buy Probability",
-
-    "Current Price"
+    "Buy Probability"
 ]
 
 for column in numeric_columns:
@@ -200,7 +194,7 @@ for column in numeric_columns:
             df[column],
 
             errors="coerce"
-        )
+        ).fillna(0)
 
 # =========================================================
 # SECTOR NORMALIZATION
@@ -249,6 +243,31 @@ auto_refresh = st.sidebar.checkbox(
     "Enable Auto Refresh",
 
     value=False
+)
+
+# =========================================================
+# LIVE UNIVERSE SIZE
+# =========================================================
+
+live_universe_size = st.sidebar.slider(
+
+    "Live Analysis Universe",
+
+    min_value=50,
+
+    max_value=500,
+
+    value=200,
+
+    step=50
+)
+
+st.sidebar.warning(
+
+    """
+    Large universes may slow down
+    Streamlit Cloud performance.
+    """
 )
 
 # =========================================================
@@ -333,12 +352,49 @@ filtered_df = filtered_df[
 ]
 
 # =========================================================
+# TOP LIVE UNIVERSE
+# =========================================================
+
+if "Institutional Score" in filtered_df.columns:
+
+    filtered_df = filtered_df.sort_values(
+
+        by="Institutional Score",
+
+        ascending=False
+    )
+
+# =========================================================
+# LIMIT LIVE PROCESSING
+# =========================================================
+
+filtered_df = filtered_df.head(
+    live_universe_size
+)
+
+# =========================================================
 # BUILD TRADE DECISIONS
 # =========================================================
 
-filtered_df = build_trade_decisions(
-    filtered_df
-)
+with st.spinner(
+    "Running Institutional Quant Engine..."
+):
+
+    filtered_df = build_trade_decisions(
+        filtered_df
+    )
+
+# =========================================================
+# EMPTY FAILSAFE
+# =========================================================
+
+if filtered_df.empty:
+
+    st.warning(
+        "No stocks passed filters."
+    )
+
+    st.stop()
 
 # =========================================================
 # MARKET REGIME
@@ -381,7 +437,7 @@ st.caption(
 )
 
 # =========================================================
-# LIVE MARKET STATUS
+# MARKET STATUS
 # =========================================================
 
 current_hour = datetime.now().hour
@@ -399,7 +455,20 @@ else:
     )
 
 # =========================================================
-# MARKET REGIME DISPLAY
+# ENGINE STATUS
+# =========================================================
+
+st.info(
+
+    f"""
+    ⚡ Live Quant Engine Active
+
+    Universe Size: {live_universe_size} stocks
+    """
+)
+
+# =========================================================
+# MARKET REGIME
 # =========================================================
 
 st.markdown(
@@ -488,7 +557,7 @@ st.markdown("---")
 col1, col2, col3, col4 = st.columns(4)
 
 col1.metric(
-    "Stocks",
+    "Live Stocks",
     len(filtered_df)
 )
 
@@ -635,7 +704,7 @@ st.caption(
 )
 
 # =========================================================
-# AUTO REFRESH ENGINE
+# AUTO REFRESH
 # =========================================================
 
 if auto_refresh:
