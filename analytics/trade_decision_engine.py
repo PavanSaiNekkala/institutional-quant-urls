@@ -18,152 +18,208 @@ def safe_numeric(series):
     ).fillna(0)
 
 # =========================================================
-# LIVE PRICE FETCHER
+# BULK LIVE MARKET FETCHER
 # =========================================================
 
-def get_live_market_data(symbol):
+def bulk_fetch_market_data(symbols):
 
     try:
 
-        stock = yf.Ticker(symbol)
-
         # =================================================
-        # FAST LIVE PRICE
+        # CLEAN SYMBOLS
         # =================================================
 
-        live_price = stock.fast_info.get(
-            "lastPrice",
-            None
-        )
+        symbols = [
+
+            str(symbol).strip()
+
+            for symbol in symbols
+
+            if pd.notna(symbol)
+        ]
+
+        symbols = list(set(symbols))
 
         # =================================================
-        # HISTORICAL DATA
+        # LIMIT LIVE FETCHES
         # =================================================
 
-        hist = stock.history(
-            period="3mo",
+        symbols = symbols[:200]
+
+        # =================================================
+        # BULK DOWNLOAD
+        # =================================================
+
+        data = yf.download(
+
+            tickers=symbols,
+
+            period="1mo",
+
             interval="1d",
-            auto_adjust=True
+
+            group_by="ticker",
+
+            auto_adjust=True,
+
+            progress=False,
+
+            threads=False
         )
 
-        if hist.empty:
-
-            return {
-
-                "current_price": live_price or 0,
-
-                "ret_5d": 0,
-
-                "ret_20d": 0,
-
-                "volume_ratio": 1
-            }
+        live_data = {}
 
         # =================================================
-        # CURRENT PRICE
+        # PROCESS EACH SYMBOL
         # =================================================
 
-        if live_price is None:
+        for symbol in symbols:
 
-            live_price = float(
-                hist["Close"].iloc[-1]
-            )
+            try:
 
-        # =================================================
-        # MOMENTUM
-        # =================================================
+                if symbol not in data:
 
-        ret_5d = 0
-        ret_20d = 0
+                    continue
 
-        if len(hist) >= 6:
+                stock_data = data[symbol]
 
-            ret_5d = (
+                if stock_data.empty:
 
-                (
-                    hist["Close"].iloc[-1]
+                    continue
 
-                    /
+                # =========================================
+                # CURRENT PRICE
+                # =========================================
 
-                    hist["Close"].iloc[-6]
-                ) - 1
+                current_price = float(
 
-            ) * 100
+                    stock_data[
+                        "Close"
+                    ].iloc[-1]
+                )
 
-        if len(hist) >= 21:
+                # =========================================
+                # RETURNS
+                # =========================================
 
-            ret_20d = (
+                ret_5d = 0
+                ret_20d = 0
 
-                (
-                    hist["Close"].iloc[-1]
+                if len(stock_data) >= 6:
 
-                    /
+                    ret_5d = (
 
-                    hist["Close"].iloc[-21]
-                ) - 1
+                        (
 
-            ) * 100
+                            stock_data[
+                                "Close"
+                            ].iloc[-1]
 
-        # =================================================
-        # VOLUME RATIO
-        # =================================================
+                            /
 
-        avg_volume = hist["Volume"].tail(20).mean()
+                            stock_data[
+                                "Close"
+                            ].iloc[-6]
 
-        current_volume = hist["Volume"].iloc[-1]
+                        ) - 1
 
-        volume_ratio = 1
+                    ) * 100
 
-        if avg_volume > 0:
+                if len(stock_data) >= 21:
 
-            volume_ratio = (
+                    ret_20d = (
 
-                current_volume
+                        (
 
-                /
+                            stock_data[
+                                "Close"
+                            ].iloc[-1]
 
-                avg_volume
-            )
+                            /
 
-        return {
+                            stock_data[
+                                "Close"
+                            ].iloc[-21]
 
-            "current_price": round(
-                float(live_price),
-                2
-            ),
+                        ) - 1
 
-            "ret_5d": round(
-                float(ret_5d),
-                2
-            ),
+                    ) * 100
 
-            "ret_20d": round(
-                float(ret_20d),
-                2
-            ),
+                # =========================================
+                # VOLUME RATIO
+                # =========================================
 
-            "volume_ratio": round(
-                float(volume_ratio),
-                2
-            )
-        }
+                avg_volume = (
+
+                    stock_data[
+                        "Volume"
+                    ]
+
+                    .tail(20)
+
+                    .mean()
+                )
+
+                current_volume = (
+
+                    stock_data[
+                        "Volume"
+                    ].iloc[-1]
+                )
+
+                volume_ratio = 1
+
+                if avg_volume > 0:
+
+                    volume_ratio = (
+
+                        current_volume
+
+                        /
+
+                        avg_volume
+                    )
+
+                # =========================================
+                # STORE
+                # =========================================
+
+                live_data[symbol] = {
+
+                    "Current Price": round(
+                        current_price,
+                        2
+                    ),
+
+                    "5D Return": round(
+                        ret_5d,
+                        2
+                    ),
+
+                    "20D Return": round(
+                        ret_20d,
+                        2
+                    ),
+
+                    "Volume Ratio": round(
+                        volume_ratio,
+                        2
+                    )
+                }
+
+            except:
+
+                continue
+
+        return live_data
 
     except Exception as e:
 
         print(
-            f"Live data error for {symbol}: {e}"
+            f"Bulk market fetch error: {e}"
         )
 
-        return {
-
-            "current_price": 0,
-
-            "ret_5d": 0,
-
-            "ret_20d": 0,
-
-            "volume_ratio": 1
-        }
+        return {}
 
 # =========================================================
 # MARKET REGIME ENGINE
@@ -211,10 +267,6 @@ def calculate_market_regime(df):
 
         avg_adx * 0.10
     )
-
-    # =====================================================
-    # REGIME CLASSIFICATION
-    # =====================================================
 
     if regime_score >= 80:
 
@@ -272,10 +324,32 @@ def build_trade_decisions(df):
             df[column] = 0
 
     # =====================================================
-    # LIVE MARKET DATA
+    # SYMBOLS
     # =====================================================
 
-    live_prices = []
+    if "Stock" in df.columns:
+
+        symbols = df[
+            "Stock"
+        ].dropna().tolist()
+
+    else:
+
+        symbols = []
+
+    # =====================================================
+    # BULK LIVE FETCH
+    # =====================================================
+
+    live_market_data = bulk_fetch_market_data(
+        symbols
+    )
+
+    # =====================================================
+    # STORE LIVE DATA
+    # =====================================================
+
+    current_prices = []
     ret_5d_list = []
     ret_20d_list = []
     volume_ratio_list = []
@@ -284,37 +358,51 @@ def build_trade_decisions(df):
 
         symbol = row.get(
             "Stock",
-            None
+            ""
         )
 
-        if symbol is None:
+        market_data = live_market_data.get(
+            symbol,
+            {}
+        )
 
-            symbol = row.get(
-                "Symbol",
-                ""
+        current_prices.append(
+
+            market_data.get(
+                "Current Price",
+                0
             )
-
-        market_data = get_live_market_data(
-            symbol
-        )
-
-        live_prices.append(
-            market_data["current_price"]
         )
 
         ret_5d_list.append(
-            market_data["ret_5d"]
+
+            market_data.get(
+                "5D Return",
+                0
+            )
         )
 
         ret_20d_list.append(
-            market_data["ret_20d"]
+
+            market_data.get(
+                "20D Return",
+                0
+            )
         )
 
         volume_ratio_list.append(
-            market_data["volume_ratio"]
+
+            market_data.get(
+                "Volume Ratio",
+                1
+            )
         )
 
-    df["Current Price"] = live_prices
+    # =====================================================
+    # ASSIGN LIVE DATA
+    # =====================================================
+
+    df["Current Price"] = current_prices
 
     df["5D Return"] = ret_5d_list
 
@@ -350,6 +438,7 @@ def build_trade_decisions(df):
         df["Volume Ratio"]
 
         * 50
+
     ).clip(0, 100)
 
     # =====================================================
@@ -361,7 +450,7 @@ def build_trade_decisions(df):
     )
 
     # =====================================================
-    # REGIME-BASED WEIGHTS
+    # REGIME WEIGHTS
     # =====================================================
 
     if "Bearish" in market_regime:
@@ -498,6 +587,7 @@ def build_trade_decisions(df):
                 / 100
             ) * 0.25
         )
+
     ).round(2)
 
     # =====================================================
@@ -509,6 +599,7 @@ def build_trade_decisions(df):
         df["Current Price"]
 
         * 0.93
+
     ).round(2)
 
     # =====================================================
@@ -525,7 +616,7 @@ def build_trade_decisions(df):
     )
 
     # =====================================================
-    # LIQUIDITY FILTER
+    # REMOVE INVALID PRICES
     # =====================================================
 
     df = df[
@@ -544,7 +635,7 @@ def build_trade_decisions(df):
     )
 
     # =====================================================
-    # FINAL COLUMN ORDER
+    # FINAL COLUMNS
     # =====================================================
 
     final_columns = [
@@ -582,7 +673,9 @@ def build_trade_decisions(df):
 
     available_columns = [
 
-        col for col in final_columns
+        col
+
+        for col in final_columns
 
         if col in df.columns
     ]
