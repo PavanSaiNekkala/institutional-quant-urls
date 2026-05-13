@@ -50,6 +50,10 @@ def bulk_fetch_market_data(symbols_tuple):
 
         symbols = symbols[:50]
 
+        if len(symbols) == 0:
+
+            return {}
+
         # =================================================
         # BULK DOWNLOAD
         # =================================================
@@ -94,6 +98,26 @@ def bulk_fetch_market_data(symbols_tuple):
                 stock_data = data[symbol]
 
                 if stock_data.empty:
+
+                    invalid_symbols.append(
+                        symbol
+                    )
+
+                    continue
+
+                # =========================================
+                # SAFE CLOSE/VOLUME
+                # =========================================
+
+                if "Close" not in stock_data.columns:
+
+                    invalid_symbols.append(
+                        symbol
+                    )
+
+                    continue
+
+                if "Volume" not in stock_data.columns:
 
                     invalid_symbols.append(
                         symbol
@@ -221,7 +245,7 @@ def bulk_fetch_market_data(symbols_tuple):
                     )
                 }
 
-            except:
+            except Exception:
 
                 invalid_symbols.append(
                     symbol
@@ -249,25 +273,51 @@ def bulk_fetch_market_data(symbols_tuple):
 
 def calculate_market_regime(df):
 
-    avg_inst = df[
+    # =====================================================
+    # SAFE COLUMN FETCH
+    # =====================================================
+
+    def safe_mean(column_name):
+
+        if column_name in df.columns:
+
+            return pd.to_numeric(
+
+                df[column_name],
+
+                errors="coerce"
+
+            ).fillna(0).mean()
+
+        return 0
+
+    # =====================================================
+    # SAFE METRICS
+    # =====================================================
+
+    avg_inst = safe_mean(
         "Institutional Score"
-    ].mean()
+    )
 
-    avg_alpha = df[
+    avg_alpha = safe_mean(
         "Alpha Score"
-    ].mean()
+    )
 
-    avg_rsi = df[
+    avg_rsi = safe_mean(
         "RSI"
-    ].mean()
+    )
 
-    avg_adx = df[
+    avg_adx = safe_mean(
         "ADX"
-    ].mean()
+    )
 
-    avg_buy_prob = df[
+    avg_buy_prob = safe_mean(
         "Buy Probability"
-    ].mean()
+    )
+
+    # =====================================================
+    # REGIME SCORE
+    # =====================================================
 
     regime_score = (
 
@@ -289,6 +339,10 @@ def calculate_market_regime(df):
 
         avg_adx * 0.10
     )
+
+    # =====================================================
+    # REGIME CLASSIFICATION
+    # =====================================================
 
     if regime_score >= 80:
 
@@ -435,7 +489,7 @@ def build_trade_decisions(df):
         )
 
     # =====================================================
-    # LIVE DATA
+    # LIVE PRICE
     # =====================================================
 
     df["Live Price"] = current_prices
