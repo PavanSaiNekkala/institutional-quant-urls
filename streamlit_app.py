@@ -712,7 +712,177 @@ with right_col:
     st.info(
         f"Dominant Sector: {top_sector}"
     )
+# =========================================================
+# INSTITUTIONAL ANALYTICS
+# =========================================================
 
+st.markdown("---")
+
+st.subheader(
+    "Institutional Analytics"
+)
+
+chart_col1, chart_col2 = st.columns(2)
+
+# =========================================================
+# SIGNAL DISTRIBUTION
+# =========================================================
+
+with chart_col1:
+
+    signal_counts = (
+
+        filtered_df[
+            "Trade Signal"
+        ]
+
+        .value_counts()
+
+        .reset_index()
+    )
+
+    signal_counts.columns = [
+
+        "Signal",
+
+        "Count"
+    ]
+
+    fig_signal = px.pie(
+
+        signal_counts,
+
+        names="Signal",
+
+        values="Count",
+
+        title="Trade Signal Distribution"
+    )
+
+    fig_signal.update_layout(
+
+        height=450
+    )
+
+    st.plotly_chart(
+
+        fig_signal,
+
+        use_container_width=True
+    )
+
+# =========================================================
+# SECTOR DISTRIBUTION
+# =========================================================
+
+with chart_col2:
+
+    if "Sector" in filtered_df.columns:
+
+        sector_counts = (
+
+            filtered_df[
+                "Sector"
+            ]
+
+            .value_counts()
+
+            .head(10)
+
+            .reset_index()
+        )
+
+        sector_counts.columns = [
+
+            "Sector",
+
+            "Count"
+        ]
+
+        fig_sector = px.bar(
+
+            sector_counts,
+
+            x="Sector",
+
+            y="Count",
+
+            title="Top Sectors",
+
+            text_auto=True
+        )
+
+        fig_sector.update_layout(
+
+            height=450
+        )
+
+        st.plotly_chart(
+
+            fig_sector,
+
+            use_container_width=True
+        )
+
+# =========================================================
+# SCORE DISTRIBUTION
+# =========================================================
+
+st.markdown("---")
+
+score_col1, score_col2 = st.columns(2)
+
+with score_col1:
+
+    fig_score = px.histogram(
+
+        filtered_df,
+
+        x="Institutional Score",
+
+        nbins=30,
+
+        title="Institutional Score Distribution"
+    )
+
+    fig_score.update_layout(
+        height=450
+    )
+
+    st.plotly_chart(
+
+        fig_score,
+
+        use_container_width=True
+    )
+
+with score_col2:
+
+    fig_conf = px.scatter(
+
+        filtered_df,
+
+        x="Institutional Score",
+
+        y="Confidence",
+
+        color="Trade Signal",
+
+        hover_data=["Stock"],
+
+        title="Confidence vs Institutional Score"
+    )
+
+    fig_conf.update_layout(
+        height=450
+    )
+
+    st.plotly_chart(
+
+        fig_conf,
+
+        use_container_width=True
+    )
 # =========================================================
 # QUANT LEADERS
 # =========================================================
