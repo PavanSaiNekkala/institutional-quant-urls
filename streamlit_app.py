@@ -9,11 +9,9 @@
 import streamlit as st
 import pandas as pd
 import duckdb
-import plotly.express as px
 
 from pathlib import Path
 from datetime import datetime
-import time
 
 from analytics.trade_decision_engine import (
 
@@ -34,12 +32,6 @@ st.set_page_config(
 
     layout="wide"
 )
-
-# =========================================================
-# LIVE MARKET SWITCH
-# =========================================================
-
-ENABLE_LIVE_MARKET = True
 
 # =========================================================
 # SECTOR NORMALIZATION
@@ -194,6 +186,7 @@ for column in numeric_columns:
             df[column],
 
             errors="coerce"
+
         ).fillna(0)
 
 # =========================================================
@@ -235,17 +228,6 @@ if st.sidebar.button(
     st.rerun()
 
 # =========================================================
-# AUTO REFRESH
-# =========================================================
-
-auto_refresh = st.sidebar.checkbox(
-
-    "Enable Auto Refresh",
-
-    value=False
-)
-
-# =========================================================
 # LIVE UNIVERSE SIZE
 # =========================================================
 
@@ -253,19 +235,23 @@ live_universe_size = st.sidebar.slider(
 
     "Live Analysis Universe",
 
-    min_value=50,
+    min_value=25,
 
-    max_value=500,
+    max_value=100,
 
     value=50,
 
-    step=50
+    step=25
 )
+
+# =========================================================
+# SIDEBAR WARNING
+# =========================================================
 
 st.sidebar.warning(
 
     """
-    Large universes may slow down
+    Larger universes may slow
     Streamlit Cloud performance.
     """
 )
@@ -352,7 +338,7 @@ filtered_df = filtered_df[
 ]
 
 # =========================================================
-# TOP LIVE UNIVERSE
+# SORT BEFORE LIVE ENGINE
 # =========================================================
 
 if "Institutional Score" in filtered_df.columns:
@@ -391,7 +377,7 @@ with st.spinner(
 if filtered_df.empty:
 
     st.warning(
-        "No stocks passed filters."
+        "No stocks available after processing."
     )
 
     st.stop()
@@ -481,76 +467,6 @@ st.markdown(
 st.markdown("---")
 
 # =========================================================
-# TOP TRADE DECISIONS
-# =========================================================
-
-st.subheader(
-    "Top Institutional Trade Signals"
-)
-
-top_signals = filtered_df[
-
-    filtered_df[
-        "Trade Signal"
-    ].isin(
-
-        [
-            "Strong Buy",
-
-            "Buy"
-        ]
-    )
-
-].copy()
-
-display_columns = [
-
-    "Stock",
-
-    "Trade Signal",
-
-    "Current Price",
-
-    "Target Price",
-
-    "Stoploss",
-
-    "Confidence",
-
-    "Momentum Score",
-
-    "Volume Score",
-
-    "5D Return",
-
-    "20D Return",
-
-    "Composite Score"
-]
-
-available_columns = [
-
-    col
-
-    for col in display_columns
-
-    if col in top_signals.columns
-]
-
-st.dataframe(
-
-    top_signals[
-        available_columns
-    ].head(50),
-
-    use_container_width=True,
-
-    height=700
-)
-
-st.markdown("---")
-
-# =========================================================
 # KPI SECTION
 # =========================================================
 
@@ -606,54 +522,90 @@ col4.metric(
 st.markdown("---")
 
 # =========================================================
-# SECTOR DISTRIBUTION
+# TOP TRADE DECISIONS
 # =========================================================
 
 st.subheader(
-    "Sector Distribution"
+    "Top Institutional Trade Signals"
 )
 
-sector_chart = px.pie(
+top_signals = filtered_df[
 
-    filtered_df,
+    filtered_df[
+        "Trade Signal"
+    ].isin(
 
-    names="Sector",
+        [
+            "Strong Buy",
 
-    title="Sector Allocation"
-)
+            "Buy"
+        ]
+    )
 
-st.plotly_chart(
-
-    sector_chart,
-
-    use_container_width=True
-)
+].copy()
 
 # =========================================================
-# ALPHA DISTRIBUTION
+# FALLBACK IF EMPTY
 # =========================================================
 
-st.subheader(
-    "Alpha Score Distribution"
+if top_signals.empty:
+
+    top_signals = filtered_df.head(20)
+
+# =========================================================
+# DISPLAY COLUMNS
+# =========================================================
+
+display_columns = [
+
+    "Stock",
+
+    "Trade Signal",
+
+    "Current Price",
+
+    "Target Price",
+
+    "Stoploss",
+
+    "Confidence",
+
+    "Momentum Score",
+
+    "Volume Score",
+
+    "5D Return",
+
+    "20D Return",
+
+    "Composite Score"
+]
+
+available_columns = [
+
+    col
+
+    for col in display_columns
+
+    if col in top_signals.columns
+]
+
+# =========================================================
+# MAIN TABLE
+# =========================================================
+
+st.dataframe(
+
+    top_signals[
+        available_columns
+    ].head(50),
+
+    use_container_width=True,
+
+    height=650
 )
 
-alpha_chart = px.histogram(
-
-    filtered_df,
-
-    x="Alpha Score",
-
-    nbins=20,
-
-    title="Alpha Score Distribution"
-)
-
-st.plotly_chart(
-
-    alpha_chart,
-
-    use_container_width=True
-)
+st.markdown("---")
 
 # =========================================================
 # TOP QUANT LEADERS
@@ -673,7 +625,9 @@ quant_df = filtered_df.sort_values(
 
 st.dataframe(
 
-    quant_df,
+    quant_df[
+        available_columns
+    ],
 
     use_container_width=True
 )
@@ -700,18 +654,8 @@ with st.expander(
 st.markdown("---")
 
 st.caption(
-    "Institutional Quant Platform | Dynamic Institutional Analytics Engine"
+    "Institutional Quant Platform | Stable Live Quant Engine"
 )
-
-# =========================================================
-# AUTO REFRESH
-# =========================================================
-
-if auto_refresh:
-
-    time.sleep(300)
-
-    st.rerun()
 
 # =========================================================
 # CLOSE DATABASE
