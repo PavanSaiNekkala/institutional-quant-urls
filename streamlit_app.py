@@ -358,7 +358,33 @@ min_score = st.sidebar.slider(
 
     60
 )
+# =========================================================
+# STOCK SEARCH
+# =========================================================
 
+search_stock = st.sidebar.text_input(
+    "Search Stock"
+)
+
+if search_stock:
+
+    filtered_df = filtered_df[
+
+        filtered_df[
+            "Stock"
+        ]
+
+        .astype(str)
+
+        .str.contains(
+
+            search_stock,
+
+            case=False,
+
+            na=False
+        )
+    ]
 # =========================================================
 # FILTER DATA
 # =========================================================
