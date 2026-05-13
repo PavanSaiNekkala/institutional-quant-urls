@@ -1,0 +1,49 @@
+# =========================================================
+# STREAMLIT SERVER
+# =========================================================
+
+[server]
+
+headless = true
+
+enableCORS = false
+
+enableXsrfProtection = false
+
+maxUploadSize = 200
+
+# =========================================================
+# BROWSER
+# =========================================================
+
+[browser]
+
+gatherUsageStats = false
+
+# =========================================================
+# THEME
+# =========================================================
+
+[theme]
+
+base = "dark"
+
+primaryColor = "#00D4FF"
+
+backgroundColor = "#0E1117"
+
+secondaryBackgroundColor = "#1C1F26"
+
+textColor = "#FAFAFA"
+
+font = "sans serif"
+
+# =========================================================
+# CLIENT
+# =========================================================
+
+[client]
+
+toolbarMode = "minimal"
+
+showSidebarNavigation = false
