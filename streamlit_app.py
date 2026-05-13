@@ -43,44 +43,130 @@ st.markdown(
     """
     <style>
 
-    .main {
-        padding-top: 1rem;
+    .stApp {
+        background-color: #0b1220;
+        color: #f3f4f6;
     }
 
-    .stMetric {
+    .main .block-container {
+        padding-top: 1.5rem;
+        padding-bottom: 1rem;
+        max-width: 1400px;
+    }
+
+    section[data-testid="stSidebar"] {
+
         background-color: #111827;
-        padding: 15px;
-        border-radius: 12px;
-        border: 1px solid #1f2937;
+        border-right: 1px solid #1f2937;
     }
 
-    .metric-title {
-        font-size: 14px;
-        color: #9ca3af;
+    section[data-testid="stSidebar"] * {
+
+        color: #f3f4f6;
     }
 
-    .main-title {
-        font-size: 42px;
+    .dashboard-title {
+
+        font-size: 46px;
         font-weight: 800;
         color: white;
+
         margin-bottom: 0px;
     }
 
-    .sub-title {
+    .dashboard-subtitle {
+
         font-size: 16px;
         color: #9ca3af;
+
         margin-top: -10px;
+        margin-bottom: 25px;
     }
 
     .section-title {
-        font-size: 26px;
+
+        font-size: 28px;
         font-weight: 700;
+
+        color: white;
+
         margin-top: 10px;
         margin-bottom: 10px;
     }
 
+    div[data-testid="metric-container"] {
+
+        background: linear-gradient(
+            145deg,
+            #111827,
+            #1f2937
+        );
+
+        border: 1px solid #374151;
+
+        padding: 14px;
+
+        border-radius: 16px;
+
+        box-shadow:
+            0 4px 15px rgba(0,0,0,0.15);
+    }
+
+    .status-box {
+
+        background: #111827;
+
+        border: 1px solid #1f2937;
+
+        padding: 18px;
+
+        border-radius: 16px;
+
+        margin-bottom: 18px;
+    }
+
+    .live-box {
+
+        background-color: rgba(16,185,129,0.12);
+
+        border: 1px solid #10b981;
+
+        color: #10b981;
+
+        padding: 16px;
+
+        border-radius: 14px;
+
+        font-weight: 600;
+    }
+
+    .closed-box {
+
+        background-color: rgba(239,68,68,0.12);
+
+        border: 1px solid #ef4444;
+
+        color: #ef4444;
+
+        padding: 16px;
+
+        border-radius: 14px;
+
+        font-weight: 600;
+    }
+
+    .stDataFrame {
+
+        border-radius: 14px;
+
+        overflow: hidden;
+
+        border: 1px solid #1f2937;
+    }
+
     </style>
     """,
+
     unsafe_allow_html=True
 )
 
@@ -244,20 +330,6 @@ st.sidebar.caption(
     "Live Quantitative Filtering Engine"
 )
 
-st.sidebar.markdown("---")
-
-# =========================================================
-# REFRESH BUTTON
-# =========================================================
-
-if st.sidebar.button(
-    "🔄 Refresh Market Data"
-):
-
-    st.cache_data.clear()
-
-    st.rerun()
-
 # =========================================================
 # LIVE UNIVERSE
 # =========================================================
@@ -410,11 +482,11 @@ if selected_signal != "All":
 st.markdown(
 
     """
-    <div class="main-title">
+    <div class="dashboard-title">
         Institutional - Quant - Urls
     </div>
 
-    <div class="sub-title">
+    <div class="dashboard-subtitle">
         AI-Powered Institutional Quantitative Analytics Platform
     </div>
     """,
@@ -441,232 +513,50 @@ with col_a:
 
     if 9 <= current_hour <= 15:
 
-        st.success(
-            "🟢 Indian Market Live"
+        st.markdown(
+
+            """
+            <div class="live-box">
+                🟢 Indian Market Live
+            </div>
+            """,
+
+            unsafe_allow_html=True
         )
 
     else:
 
-        st.warning(
-            "🔴 Market Closed"
+        st.markdown(
+
+            """
+            <div class="closed-box">
+                🔴 Market Closed
+            </div>
+            """,
+
+            unsafe_allow_html=True
         )
 
 with col_b:
 
-    st.info(
+    st.markdown(
 
         f"""
-        ⚡ Live Quant Engine Active
-        
-        Universe Size: {live_universe_size} Stocks
-        
-        Market Regime: {market_regime}
-        """
+        <div class="status-box">
+
+        ⚡ <b>Live Quant Engine Active</b>
+
+        <br><br>
+
+        Universe Size: <b>{live_universe_size}</b> Stocks
+
+        <br><br>
+
+        Market Regime:
+        <b>{market_regime}</b>
+
+        </div>
+        """,
+
+        unsafe_allow_html=True
     )
-
-# =========================================================
-# KPI SECTION
-# =========================================================
-
-col1, col2, col3, col4 = st.columns(4)
-
-avg_score = round(
-
-    filtered_df[
-        "Institutional Score"
-    ].mean(),
-
-    2
-)
-
-avg_alpha = round(
-
-    filtered_df[
-        "Alpha Score"
-    ].mean(),
-
-    2
-)
-
-avg_confidence = round(
-
-    filtered_df[
-        "Confidence"
-    ].mean(),
-
-    2
-)
-
-strong_buys = len(
-
-    filtered_df[
-
-        filtered_df[
-            "Trade Signal"
-        ] == "Strong Buy"
-    ]
-)
-
-col1.metric(
-    "Live Stocks",
-    len(filtered_df)
-)
-
-col2.metric(
-    "Avg Institutional Score",
-    avg_score
-)
-
-col3.metric(
-    "Strong Buys",
-    strong_buys
-)
-
-col4.metric(
-    "Avg Confidence",
-    avg_confidence
-)
-
-st.markdown("---")
-
-# =========================================================
-# TOP SIGNALS
-# =========================================================
-
-st.markdown(
-    '<div class="section-title">Top Institutional Trade Signals</div>',
-    unsafe_allow_html=True
-)
-
-top_signals = filtered_df[
-
-    filtered_df[
-        "Trade Signal"
-    ].isin(
-
-        [
-            "Strong Buy",
-
-            "Buy"
-        ]
-    )
-
-].copy()
-
-if top_signals.empty:
-
-    top_signals = filtered_df.head(20)
-
-# =========================================================
-# DISPLAY COLUMNS
-# =========================================================
-
-display_columns = [
-
-    "Stock",
-
-    "Trade Signal",
-
-    "Current Price",
-
-    "Target Price",
-
-    "Stoploss",
-
-    "Confidence",
-
-    "Momentum Score",
-
-    "Volume Score",
-
-    "5D Return",
-
-    "20D Return",
-
-    "Composite Score"
-]
-
-available_columns = [
-
-    col
-
-    for col in display_columns
-
-    if col in top_signals.columns
-]
-
-# =========================================================
-# MAIN TABLE
-# =========================================================
-
-styled_df = top_signals[
-    available_columns
-].head(50)
-
-st.dataframe(
-
-    styled_df,
-
-    use_container_width=True,
-
-    height=650
-)
-
-st.markdown("---")
-
-# =========================================================
-# QUANT LEADERS
-# =========================================================
-
-st.markdown(
-    '<div class="section-title">Top Quant Leaders</div>',
-    unsafe_allow_html=True
-)
-
-quant_df = filtered_df.sort_values(
-
-    by="Composite Score",
-
-    ascending=False
-
-).head(20)
-
-st.dataframe(
-
-    quant_df[
-        available_columns
-    ],
-
-    use_container_width=True
-)
-
-# =========================================================
-# FULL DATASET
-# =========================================================
-
-with st.expander(
-    "View Full Dataset"
-):
-
-    st.dataframe(
-
-        filtered_df,
-
-        use_container_width=True
-    )
-
-# =========================================================
-# FOOTER
-# =========================================================
-
-st.markdown("---")
-
-st.caption(
-    "Institutional - Quant - Urls | Stable Live Quantitative Analytics Engine"
-)
-
-# =========================================================
-# CLOSE DATABASE
-# =========================================================
-
-conn.close()
