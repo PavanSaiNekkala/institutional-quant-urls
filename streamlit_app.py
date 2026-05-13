@@ -10,6 +10,7 @@
 import streamlit as st
 import pandas as pd
 import duckdb
+import pytz
 
 from pathlib import Path
 from datetime import datetime
@@ -54,6 +55,17 @@ st.markdown(
     </style>
     """,
     unsafe_allow_html=True
+)
+
+# =========================================================
+# INDIAN TIME
+# =========================================================
+
+india_time = datetime.now(
+
+    pytz.timezone(
+        "Asia/Kolkata"
+    )
 )
 
 # =========================================================
@@ -376,8 +388,10 @@ st.caption(
 )
 
 st.caption(
+
     f"Last Updated: "
-    f"{datetime.now().strftime('%d-%m-%Y %H:%M:%S')}"
+
+    f"{india_time.strftime('%d-%m-%Y %H:%M:%S IST')}"
 )
 
 st.markdown("---")
@@ -390,7 +404,7 @@ status_col1, status_col2, status_col3 = st.columns(3)
 
 with status_col1:
 
-    current_hour = datetime.now().hour
+    current_hour = india_time.hour
 
     if 9 <= current_hour <= 15:
 
