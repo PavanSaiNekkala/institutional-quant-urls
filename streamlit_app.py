@@ -455,7 +455,37 @@ if filtered_df.empty:
 market_regime = calculate_market_regime(
     filtered_df
 )
+# =========================================================
+# TOP CONVICTION PICKS
+# =========================================================
 
+top_conviction_df = filtered_df.sort_values(
+
+    by="Composite Score",
+
+    ascending=False
+
+).head(10)
+
+watchlist_df = filtered_df[
+
+    filtered_df[
+        "Trade Signal"
+    ].isin(
+
+        [
+            "Strong Buy",
+
+            "Buy"
+        ]
+    )
+].sort_values(
+
+    by="Confidence",
+
+    ascending=False
+
+).head(25)
 # =========================================================
 # SIGNAL FILTER
 # =========================================================
@@ -583,7 +613,214 @@ metric4.metric(
 )
 
 st.markdown("---")
+# =========================================================
+# STOCK DETAIL ANALYTICS
+# =========================================================
 
+st.markdown("---")
+
+st.subheader(
+    "Institutional Stock Intelligence"
+)
+
+selected_stock = st.selectbox(
+
+    "Select Stock",
+
+    sorted(
+        filtered_df[
+            "Stock"
+        ].unique()
+    )
+)
+# =========================================================
+# SELECTED STOCK DATA
+# =========================================================
+
+selected_df = filtered_df[
+
+    filtered_df[
+        "Stock"
+    ] == selected_stock
+]
+
+if not selected_df.empty:
+
+    stock_data = selected_df.iloc[0]
+
+    detail_col1, detail_col2, detail_col3, detail_col4 = st.columns(4)
+
+    with detail_col1:
+
+        st.metric(
+            "Current Price",
+            stock_data.get(
+                "Current Price",
+                0
+            )
+        )
+
+    with detail_col2:
+
+        st.metric(
+            "Institutional Score",
+            round(
+                stock_data.get(
+                    "Institutional Score",
+                    0
+                ),
+                2
+            )
+        )
+
+    with detail_col3:
+
+        st.metric(
+            "Confidence",
+            round(
+                stock_data.get(
+                    "Confidence",
+                    0
+                ),
+                2
+            )
+        )
+
+    with detail_col4:
+
+        st.metric(
+            "Trade Signal",
+            stock_data.get(
+                "Trade Signal",
+                "N/A"
+            )
+        )
+
+    # =====================================================
+    # STOCK SUMMARY
+    # =====================================================
+
+    st.info(
+
+        f"""
+        Sector:
+        {stock_data.get('Sector', 'Unknown')}
+
+        | Market Cap:
+        {stock_data.get('Market Cap', 'N/A')}
+
+        | RSI:
+        {stock_data.get('RSI', 'N/A')}
+
+        | ADX:
+        {stock_data.get('ADX', 'N/A')}
+        """
+    )
+    # =========================================================
+# PRICE VS TARGET
+# =========================================================
+
+if not selected_df.empty:
+
+    price_data = pd.DataFrame({
+
+        "Type": [
+
+            "Current Price",
+
+            "Target Price",
+
+            "Stoploss"
+        ],
+
+        "Value": [
+
+            stock_data.get(
+                "Current Price",
+                0
+            ),
+
+            stock_data.get(
+                "Target Price",
+                0
+            ),
+
+            stock_data.get(
+                "Stoploss",
+                0
+            )
+        ]
+    })
+
+    fig_price = px.bar(
+
+        price_data,
+
+        x="Type",
+
+        y="Value",
+
+        title=f"{selected_stock} Price Analysis",
+
+        text_auto=True
+    )
+
+    fig_price.update_layout(
+        height=400
+    )
+
+    st.plotly_chart(
+
+        fig_price,
+
+        use_container_width=True
+    )
+# =========================================================
+# TOP CONVICTION PICKS
+# =========================================================
+
+st.markdown("---")
+
+st.subheader(
+    "Top Institutional Conviction Picks"
+)
+
+conviction_columns = [
+
+    "Stock",
+
+    "Sector",
+
+    "Trade Signal",
+
+    "Current Price",
+
+    "Target Price",
+
+    "Confidence",
+
+    "Composite Score"
+]
+
+available_conviction_columns = [
+
+    col
+
+    for col in conviction_columns
+
+    if col in top_conviction_df.columns
+]
+
+st.dataframe(
+
+    top_conviction_df[
+        available_conviction_columns
+    ],
+
+    use_container_width=True,
+
+    height=350
+)
 # =========================================================
 # MAIN DASHBOARD LAYOUT
 # =========================================================
@@ -909,6 +1146,50 @@ with score_col2:
 
         use_container_width=True
     )
+# =========================================================
+# INSTITUTIONAL WATCHLIST
+# =========================================================
+
+st.markdown("---")
+
+st.subheader(
+    "Institutional Watchlist"
+)
+
+watchlist_columns = [
+
+    "Stock",
+
+    "Sector",
+
+    "Trade Signal",
+
+    "Current Price",
+
+    "Confidence",
+
+    "Institutional Score"
+]
+
+available_watchlist_columns = [
+
+    col
+
+    for col in watchlist_columns
+
+    if col in watchlist_df.columns
+]
+
+st.dataframe(
+
+    watchlist_df[
+        available_watchlist_columns
+    ],
+
+    use_container_width=True,
+
+    height=450
+)
 # =========================================================
 # QUANT LEADERS
 # =========================================================
