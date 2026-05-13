@@ -634,7 +634,7 @@ conn.execute(
 )
 
 # =========================================================
-# EXPORT BACKTEST CSV
+# EXPORT BACKTEST
 # =========================================================
 
 if backtest_results is not None:
@@ -677,11 +677,11 @@ else:
     backtest_df = pd.DataFrame()
 
 # =========================================================
-# EXPORT CSV FILES
+# EXPORT FILES
 # =========================================================
 
 print("=" * 60)
-print("EXPORTING CSV FILES...")
+print("EXPORTING CSV + XLSX FILES...")
 print("=" * 60)
 
 # =========================================================
@@ -692,6 +692,14 @@ final_df.to_csv(
 
     OUTPUT_DIR
     / "enriched_stock_data.csv",
+
+    index=False
+)
+
+final_df.to_excel(
+
+    OUTPUT_DIR
+    / "enriched_stock_data.xlsx",
 
     index=False
 )
@@ -708,6 +716,14 @@ portfolio_df.to_csv(
     index=False
 )
 
+portfolio_df.to_excel(
+
+    OUTPUT_DIR
+    / "institutional_portfolio.xlsx",
+
+    index=False
+)
+
 # =========================================================
 # FAILED SYMBOLS
 # =========================================================
@@ -716,6 +732,14 @@ failed_df.to_csv(
 
     OUTPUT_DIR
     / "failed_symbols.csv",
+
+    index=False
+)
+
+failed_df.to_excel(
+
+    OUTPUT_DIR
+    / "failed_symbols.xlsx",
 
     index=False
 )
@@ -730,6 +754,14 @@ if not backtest_df.empty:
 
         OUTPUT_DIR
         / "backtest_results.csv",
+
+        index=False
+    )
+
+    backtest_df.to_excel(
+
+        OUTPUT_DIR
+        / "backtest_results.xlsx",
 
         index=False
     )
@@ -754,6 +786,14 @@ top_picks_df.to_csv(
     index=False
 )
 
+top_picks_df.to_excel(
+
+    OUTPUT_DIR
+    / "top_institutional_picks.xlsx",
+
+    index=False
+)
+
 # =========================================================
 # EXPORT STRONG BUYS
 # =========================================================
@@ -774,6 +814,14 @@ strong_buy_df.to_csv(
 
     OUTPUT_DIR
     / "strong_buy_stocks.csv",
+
+    index=False
+)
+
+strong_buy_df.to_excel(
+
+    OUTPUT_DIR
+    / "strong_buy_stocks.xlsx",
 
     index=False
 )
@@ -808,6 +856,14 @@ if "Sector" in final_df.columns:
         index=False
     )
 
+    sector_leaders.to_excel(
+
+        OUTPUT_DIR
+        / "sector_leaders.xlsx",
+
+        index=False
+    )
+
 # =========================================================
 # EXPORT QUANT LEADERS
 # =========================================================
@@ -827,6 +883,18 @@ quant_leaders.to_csv(
 
     index=False
 )
+
+quant_leaders.to_excel(
+
+    OUTPUT_DIR
+    / "top_quant_stocks.xlsx",
+
+    index=False
+)
+
+print("=" * 60)
+print("ALL CSV + XLSX EXPORTS COMPLETED")
+print("=" * 60)
 
 # =========================================================
 # CLOSE DATABASE
