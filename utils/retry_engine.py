@@ -15,7 +15,7 @@ def retry_request(
 
     retries=6,
 
-    base_delay=3
+    base_delay=5
 ):
 
     last_exception = None
@@ -30,23 +30,59 @@ def retry_request(
 
             last_exception = e
 
-            wait_time = (
+            error_text = str(e)
 
-                base_delay
+            # =================================================
+            # YAHOO RATE LIMIT DETECTION
+            # =================================================
 
-                * (attempt + 1)
+            if (
 
-                +
+                "Too Many Requests" in error_text
 
-                random.uniform(
-                    1,
-                    3
+                or
+
+                "429" in error_text
+
+                or
+
+                "Rate limited" in error_text
+            ):
+
+                wait_time = (
+
+                    30
+
+                    + random.uniform(
+                        5,
+                        15
+                    )
                 )
-            )
+
+                print(
+                    f"Yahoo cooldown "
+                    f"{wait_time:.2f}s"
+                )
+
+            else:
+
+                wait_time = (
+
+                    base_delay
+
+                    * (attempt + 1)
+
+                    +
+
+                    random.uniform(
+                        2,
+                        6
+                    )
+                )
 
             print(
 
-                f"Retry {attempt+1}"
+                f"Retry {attempt + 1}/{retries}"
 
                 f" | Waiting {wait_time:.2f}s"
 
