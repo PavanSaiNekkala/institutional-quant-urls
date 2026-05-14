@@ -2,15 +2,11 @@
 # SYMBOL VALIDATOR
 # =========================================================
 
-import yfinance as yf
-
-# =========================================================
-# INVALID KEYWORDS
-# =========================================================
-
-INVALID_KEYWORDS = [
+BLACKLIST = [
 
     "ETF",
+
+    "BEES",
 
     "LIQUID",
 
@@ -18,104 +14,105 @@ INVALID_KEYWORDS = [
 
     "SILVER",
 
-    "BEES",
-
     "FUND",
 
-    "INDEX"
+    "INDEX",
+
+    "NIFTY",
+
+    "SENSEX",
+
+    "BANKBEES",
+
+    "JUNIORBEES"
 ]
 
 # =========================================================
 # VALIDATE SYMBOL
 # =========================================================
 
-def validate_symbol(symbol):
+def validate_symbol(stock):
 
     try:
 
-        if symbol is None:
+        if stock is None:
 
             return {
 
                 "valid": False,
 
-                "symbol": symbol
+                "symbol": None
             }
 
-        symbol = str(symbol).strip().upper()
+        stock = str(
+            stock
+        ).strip().upper()
 
-        # =============================================
-        # REMOVE EMPTY
-        # =============================================
+        # =================================================
+        # EMPTY CHECK
+        # =================================================
 
-        if symbol == "":
+        if stock == "":
 
             return {
 
                 "valid": False,
 
-                "symbol": symbol
+                "symbol": stock
             }
 
-        # =============================================
-        # REMOVE ETF / MF
-        # =============================================
+        # =================================================
+        # BLACKLIST CHECK
+        # =================================================
 
-        for keyword in INVALID_KEYWORDS:
+        for word in BLACKLIST:
 
-            if keyword in symbol:
+            if word in stock:
 
                 return {
 
                     "valid": False,
 
-                    "symbol": symbol
+                    "symbol": stock
                 }
 
-        # =============================================
-        # ENSURE .NS
-        # =============================================
+        # =================================================
+        # NSE FORMAT
+        # =================================================
 
-        if not symbol.endswith(".NS"):
+        if not stock.endswith(".NS"):
 
-            symbol = f"{symbol}.NS"
+            stock = f"{stock}.NS"
 
-        # =============================================
-        # QUICK VALIDATION
-        # =============================================
+        # =================================================
+        # LENGTH SAFETY
+        # =================================================
 
-        ticker = yf.Ticker(symbol)
-
-        info = ticker.fast_info
-
-        last_price = info.get(
-
-            "lastPrice",
-
-            None
-        )
-
-        if last_price is None:
+        if len(stock) < 3:
 
             return {
 
                 "valid": False,
 
-                "symbol": symbol
+                "symbol": stock
             }
+
+        # =================================================
+        # RETURN VALID
+        # =================================================
 
         return {
 
             "valid": True,
 
-            "symbol": symbol
+            "symbol": stock
         }
 
-    except Exception:
+    except:
 
         return {
 
             "valid": False,
 
-            "symbol": symbol
+            "symbol": None
         }
