@@ -685,232 +685,260 @@ print("EXPORTING CSV + XLSX FILES...")
 print("=" * 60)
 
 # =========================================================
-# ENRICHED STOCK DATA
+# ENSURE OUTPUT DIRECTORY
 # =========================================================
 
-final_df.to_csv(
-
-    OUTPUT_DIR
-    / "enriched_stock_data.csv",
-
-    index=False
+OUTPUT_DIR.mkdir(
+    exist_ok=True
 )
-
-final_df.to_excel(
-
-    OUTPUT_DIR
-    / "enriched_stock_data.xlsx",
-
-    index=False
-)
-
-# =========================================================
-# PORTFOLIO
-# =========================================================
-
-portfolio_df.to_csv(
-
-    OUTPUT_DIR
-    / "institutional_portfolio.csv",
-
-    index=False
-)
-
-portfolio_df.to_excel(
-
-    OUTPUT_DIR
-    / "institutional_portfolio.xlsx",
-
-    index=False
-)
-
-# =========================================================
-# FAILED SYMBOLS
-# =========================================================
-
-failed_df.to_csv(
-
-    OUTPUT_DIR
-    / "failed_symbols.csv",
-
-    index=False
-)
-
-failed_df.to_excel(
-
-    OUTPUT_DIR
-    / "failed_symbols.xlsx",
-
-    index=False
-)
-
-# =========================================================
-# BACKTEST RESULTS
-# =========================================================
-
-if not backtest_df.empty:
-
-    backtest_df.to_csv(
-
-        OUTPUT_DIR
-        / "backtest_results.csv",
-
-        index=False
-    )
-
-    backtest_df.to_excel(
-
-        OUTPUT_DIR
-        / "backtest_results.xlsx",
-
-        index=False
-    )
-
-# =========================================================
-# EXPORT TOP PICKS
-# =========================================================
 
 # =========================================================
 # SAFE SORT COLUMN
 # =========================================================
 
-sort_column = "Institutional Score"
+sort_column = None
 
-if "Composite Score" in final_df.columns:
+for column in [
 
-    sort_column = "Composite Score"
+    "Composite Score",
 
-elif "Institutional Score" in final_df.columns:
+    "Institutional Score",
 
-    sort_column = "Institutional Score"
+    "Confidence",
 
-elif "Confidence" in final_df.columns:
+    "Buy Probability"
+]:
 
-    sort_column = "Confidence"
+    if column in final_df.columns:
+
+        sort_column = column
+
+        break
 
 # =========================================================
-# TOP PICKS
+# FALLBACK
 # =========================================================
 
-top_picks_df = final_df.sort_values(
+if sort_column is None:
+
+    sort_column = final_df.columns[0]
+
+# =========================================================
+# SORTED DATAFRAME
+# =========================================================
+
+sorted_df = final_df.sort_values(
 
     by=sort_column,
 
     ascending=False
 )
-top_picks_df.to_csv(
-
-    OUTPUT_DIR
-    / "top_institutional_picks.csv",
-
-    index=False
-)
-
-top_picks_df.to_excel(
-
-    OUTPUT_DIR
-    / "top_institutional_picks.xlsx",
-
-    index=False
-)
 
 # =========================================================
-# EXPORT STRONG BUYS
+# TOP PICKS
 # =========================================================
 
-strong_buy_df = final_df[
-
-    final_df[
-        "Trade Signal"
-    ].isin(
-        [
-            "Strong Buy",
-            "Buy"
-        ]
-    )
-]
-
-strong_buy_df.to_csv(
-
-    OUTPUT_DIR
-    / "strong_buy_stocks.csv",
-
-    index=False
-)
-
-strong_buy_df.to_excel(
-
-    OUTPUT_DIR
-    / "strong_buy_stocks.xlsx",
-
-    index=False
-)
+top_picks_df = sorted_df.head(100)
 
 # =========================================================
-# EXPORT SECTOR LEADERS
+# STRONG BUYS
+# =========================================================
+
+if "Trade Signal" in final_df.columns:
+
+    strong_buy_df = final_df[
+
+        final_df[
+            "Trade Signal"
+        ].isin(
+            [
+                "Strong Buy",
+                "Buy"
+            ]
+        )
+    ]
+
+else:
+
+    strong_buy_df = pd.DataFrame()
+
+# =========================================================
+# SECTOR LEADERS
 # =========================================================
 
 if "Sector" in final_df.columns:
 
     sector_leaders = (
 
-        final_df
-
-        .sort_values(
-
-            by="Composite Score",
-
-            ascending=False
-        )
+        sorted_df
 
         .groupby("Sector")
 
         .head(5)
     )
 
-    sector_leaders.to_csv(
+else:
 
-        OUTPUT_DIR
-        / "sector_leaders.csv",
-
-        index=False
-    )
-
-    sector_leaders.to_excel(
-
-        OUTPUT_DIR
-        / "sector_leaders.xlsx",
-
-        index=False
-    )
+    sector_leaders = pd.DataFrame()
 
 # =========================================================
-# EXPORT QUANT LEADERS
+# QUANT LEADERS
 # =========================================================
 
-quant_leaders = final_df.sort_values(
+quant_leaders = sorted_df.head(100)
 
-    by="Institutional Score",
+# =========================================================
+# BACKTEST DATAFRAME
+# =========================================================
 
-    ascending=False
+if backtest_results is not None:
 
-).head(100)
+    backtest_df = pd.DataFrame([{
 
-quant_leaders.to_csv(
+        "CAGR":
+        backtest_results.get(
+            "CAGR",
+            0
+        ),
 
-    OUTPUT_DIR
-    / "top_quant_stocks.csv",
+        "Sharpe Ratio":
+        backtest_results.get(
+            "Sharpe Ratio",
+            0
+        ),
 
-    index=False
-)
+        "Max Drawdown":
+        backtest_results.get(
+            "Max Drawdown",
+            0
+        ),
 
-quant_leaders.to_excel(
+        "Volatility":
+        backtest_results.get(
+            "Volatility",
+            0
+        ),
 
-    OUTPUT_DIR
-    / "top_quant_stocks.xlsx",
+        "Win Rate":
+        backtest_results.get(
+            "Win Rate",
+            0
+        )
+    }])
 
-    index=False
-)
+else:
+
+    backtest_df = pd.DataFrame()
+
+# =========================================================
+# EXPORT CSV FILES
+# =========================================================
+
+csv_exports = {
+
+    "enriched_stock_data.csv":
+    final_df,
+
+    "institutional_portfolio.csv":
+    portfolio_df,
+
+    "failed_symbols.csv":
+    failed_df,
+
+    "top_institutional_picks.csv":
+    top_picks_df,
+
+    "strong_buy_stocks.csv":
+    strong_buy_df,
+
+    "sector_leaders.csv":
+    sector_leaders,
+
+    "top_quant_stocks.csv":
+    quant_leaders,
+
+    "backtest_results.csv":
+    backtest_df
+}
+
+for filename, dataframe in csv_exports.items():
+
+    try:
+
+        if dataframe is not None:
+
+            dataframe.to_csv(
+
+                OUTPUT_DIR / filename,
+
+                index=False
+            )
+
+            print(
+                f"CSV Exported : {filename}"
+            )
+
+    except Exception as e:
+
+        print(
+            f"CSV Export Failed : "
+            f"{filename} | {e}"
+        )
+
+# =========================================================
+# EXPORT XLSX FILES
+# =========================================================
+
+xlsx_exports = {
+
+    "enriched_stock_data.xlsx":
+    final_df,
+
+    "institutional_portfolio.xlsx":
+    portfolio_df,
+
+    "failed_symbols.xlsx":
+    failed_df,
+
+    "top_institutional_picks.xlsx":
+    top_picks_df,
+
+    "strong_buy_stocks.xlsx":
+    strong_buy_df,
+
+    "sector_leaders.xlsx":
+    sector_leaders,
+
+    "top_quant_stocks.xlsx":
+    quant_leaders,
+
+    "backtest_results.xlsx":
+    backtest_df
+}
+
+for filename, dataframe in xlsx_exports.items():
+
+    try:
+
+        if dataframe is not None:
+
+            dataframe.to_excel(
+
+                OUTPUT_DIR / filename,
+
+                index=False
+            )
+
+            print(
+                f"XLSX Exported : {filename}"
+            )
+
+    except Exception as e:
+
+        print(
+            f"XLSX Export Failed : "
+            f"{filename} | {e}"
+        )
 
 print("=" * 60)
 print("ALL CSV + XLSX EXPORTS COMPLETED")
