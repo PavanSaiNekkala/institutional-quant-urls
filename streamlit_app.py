@@ -139,6 +139,10 @@ def normalize_sector(sector):
 
 BASE_DIR = Path(__file__).resolve().parent
 
+# =========================================================
+# SAFE DATABASE CONNECTION
+# =========================================================
+
 try:
 
     conn = get_connection()
@@ -146,7 +150,7 @@ try:
 except Exception as e:
 
     st.error(
-        f"Database Connection Failed: {e}"
+        f"Database Connection Failed : {e}"
     )
 
     st.stop()
@@ -166,14 +170,29 @@ def load_database():
         """
     ).df()
 
+# =========================================================
+# SAFE DATABASE LOAD
+# =========================================================
+
 try:
 
     df = load_database()
+    # =========================================================
+    # EMPTY DATABASE SAFETY
+    # =========================================================
+
+    if df.empty:
+
+        st.warning(
+            "Database is empty. Run the pipeline first."
+        )
+
+        st.stop()
 
 except Exception as e:
 
     st.error(
-        f"Database Load Failed: {e}"
+        f"Database Load Failed : {e}"
     )
 
     st.stop()
@@ -306,8 +325,22 @@ st.sidebar.info(
 st.sidebar.markdown("---")
 
 # =========================================================
-# LIVE UNIVERSE
+# SAFE LIVE UNIVERSE
 # =========================================================
+
+max_universe = max(
+
+    100,
+
+    int(
+        df["Stock"].nunique()
+    )
+)
+
+default_universe = min(
+    500,
+    max_universe
+)
 
 live_universe_size = st.sidebar.slider(
 
@@ -315,18 +348,12 @@ live_universe_size = st.sidebar.slider(
 
     min_value=100,
 
-    max_value=df["Stock"].nunique(),
+    max_value=max_universe,
 
-    value=min(
-
-        500,
-
-        df["Stock"].nunique()
-    ),
+    value=default_universe,
 
     step=100
 )
-
 # =========================================================
 # FILTERS
 # =========================================================
@@ -421,13 +448,18 @@ if selected_sector != "All":
         == selected_sector
     ]
 
-filtered_df = filtered_df[
+# =========================================================
+# SAFE SCORE FILTER
+# =========================================================
 
-    filtered_df[
-        "Institutional Score"
-    ] >= min_score
-]
+if "Institutional Score" in filtered_df.columns:
 
+    filtered_df = filtered_df[
+
+        filtered_df[
+            "Institutional Score"
+        ] >= min_score
+    ]
 # =========================================================
 # SORT DATA
 # =========================================================
@@ -459,14 +491,25 @@ if live_universe_size < len(filtered_df):
 # BUILD TRADE DECISIONS
 # =========================================================
 
+# =========================================================
+# BUILD TRADE DECISIONS
+# =========================================================
+
 with st.spinner(
     "Running Institutional Quant Engine..."
 ):
 
-    filtered_df = build_trade_decisions(
-        filtered_df
-    )
+    try:
 
+        filtered_df = build_trade_decisions(
+            filtered_df
+        )
+
+    except Exception as e:
+
+        st.warning(
+            f"Trade engine warning : {e}"
+        )
 # =========================================================
 # SIGNAL FILTER
 # =========================================================
@@ -496,10 +539,15 @@ if filtered_df.empty:
 # MARKET REGIME
 # =========================================================
 
-market_regime = calculate_market_regime(
-    filtered_df
-)
+try:
 
+    market_regime = calculate_market_regime(
+        filtered_df
+    )
+
+except:
+
+    market_regime = "Unknown"
 # =========================================================
 # HEATMAP DATA
 # =========================================================
@@ -771,7 +819,54 @@ st.markdown("---")
 st.subheader(
     "Institutional Sector Heatmap"
 )
+# =========================================================
+# SAFE HEATMAP
+# =========================================================
 
+# =========================================================
+# SAFE HEATMAP
+# =========================================================
+
+if heatmap_df.empty:
+
+    st.warning(
+        "Heatmap data unavailable."
+    )
+
+else:
+
+    fig_heatmap = px.treemap(
+
+        heatmap_df,
+
+        path=["Sector"],
+
+        values="Stock Count",
+
+        color="Capital Flow Score",
+
+        hover_data=[
+
+            "Avg Institutional Score",
+
+            "Avg Confidence",
+
+            "Avg Price"
+        ],
+
+        color_continuous_scale="RdYlGn"
+    )
+
+    fig_heatmap.update_layout(
+        height=700
+    )
+
+    st.plotly_chart(
+        fig_heatmap,
+        use_container_width=True
+    )
+
+else:
 fig_heatmap = px.treemap(
 
     heatmap_df,
