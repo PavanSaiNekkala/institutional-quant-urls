@@ -20,6 +20,8 @@ jobs:
 
     runs-on: ubuntu-latest
 
+    timeout-minutes: 360
+
     steps:
 
       # ===================================================
@@ -57,7 +59,7 @@ jobs:
           pip install -r requirements.txt
 
       # ===================================================
-      # CREATE REQUIRED DIRECTORIES
+      # CREATE DIRECTORIES
       # ===================================================
 
       - name: Create Required Directories
@@ -85,8 +87,6 @@ jobs:
           rm -f output/*.csv || true
           rm -f output/*.parquet || true
 
-          rm -f cache/* || true
-
       # ===================================================
       # RUN MAIN PIPELINE
       # ===================================================
@@ -98,7 +98,7 @@ jobs:
           python main.py
 
       # ===================================================
-      # VERIFY OUTPUT
+      # VERIFY OUTPUTS
       # ===================================================
 
       - name: Verify Outputs
@@ -126,7 +126,7 @@ jobs:
           git config --global user.email "actions@github.com"
 
           # =================================================
-          # FORCE ADD OUTPUT FILES
+          # FORCE ADD GENERATED FILES
           # =================================================
 
           git add -f output/*.csv || true
