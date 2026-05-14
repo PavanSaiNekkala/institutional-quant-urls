@@ -8,7 +8,6 @@
 # =========================================================
 
 import io
-import duckdb
 import pytz
 import yfinance as yf
 import streamlit as st
@@ -19,6 +18,10 @@ import plotly.graph_objects as go
 from pathlib import Path
 from datetime import datetime
 from plotly.subplots import make_subplots
+
+from utils.db_manager import (
+    get_connection
+)
 
 from analytics.trade_decision_engine import (
 
@@ -53,7 +56,7 @@ st.markdown(
     .main .block-container {
 
         padding-top: 1rem;
-        max-width: 1600px;
+        max-width: 1700px;
     }
 
     .stMetric {
@@ -98,10 +101,13 @@ def normalize_sector(sector):
     sector_mapping = {
 
         "it services": "Technology",
+
         "software": "Technology",
+
         "information technology": "Technology",
 
         "banking": "Banking",
+
         "banks": "Banking",
 
         "financial services": "Financial Services",
@@ -133,29 +139,9 @@ def normalize_sector(sector):
 
 BASE_DIR = Path(__file__).resolve().parent
 
-DB_FILE = (
-
-    BASE_DIR
-
-    / "database"
-
-    / "institutional_quant.db"
-)
-
-if not DB_FILE.exists():
-
-    st.error(
-        f"Database not found:\n{DB_FILE}"
-    )
-
-    st.stop()
-
 try:
 
-    conn = duckdb.connect(
-        str(DB_FILE),
-        read_only=True
-    )
+    conn = get_connection()
 
 except Exception as e:
 
@@ -183,6 +169,15 @@ def load_database():
 try:
 
     df = load_database()
+
+except Exception as e:
+
+    st.error(
+        f"Database Load Failed: {e}"
+    )
+
+    st.stop()
+
 # =========================================================
 # LOAD INPUT UNIVERSE
 # =========================================================
@@ -207,14 +202,6 @@ try:
 except Exception:
 
     total_universe = len(df)
-
-except Exception as e:
-
-    st.error(
-        f"Database Load Failed: {e}"
-    )
-
-    st.stop()
 
 # =========================================================
 # REMOVE DUPLICATES
@@ -244,7 +231,9 @@ numeric_columns = [
 
     "ADX",
 
-    "Current Price"
+    "Current Price",
+
+    "Confidence"
 ]
 
 for column in numeric_columns:
@@ -330,7 +319,7 @@ live_universe_size = st.sidebar.slider(
 
     value=min(
 
-        300,
+        500,
 
         df["Stock"].nunique()
     ),
@@ -440,15 +429,25 @@ filtered_df = filtered_df[
 ]
 
 # =========================================================
-# LIMIT LIVE ENGINE
+# SORT DATA
 # =========================================================
+
+sort_column = "Institutional Score"
+
+if "Composite Score" in filtered_df.columns:
+
+    sort_column = "Composite Score"
 
 filtered_df = filtered_df.sort_values(
 
-    by="Institutional Score",
+    by=sort_column,
 
     ascending=False
 )
+
+# =========================================================
+# LIMIT LIVE ENGINE
+# =========================================================
 
 if live_universe_size < len(filtered_df):
 
@@ -502,12 +501,62 @@ market_regime = calculate_market_regime(
 )
 
 # =========================================================
+# HEATMAP DATA
+# =========================================================
+
+heatmap_df = (
+
+    filtered_df
+
+    .groupby("Sector")
+
+    .agg({
+
+        "Institutional Score": "mean",
+
+        "Confidence": "mean",
+
+        "Current Price": "mean",
+
+        "Stock": "count"
+    })
+
+    .reset_index()
+)
+
+heatmap_df.columns = [
+
+    "Sector",
+
+    "Avg Institutional Score",
+
+    "Avg Confidence",
+
+    "Avg Price",
+
+    "Stock Count"
+]
+
+heatmap_df["Capital Flow Score"] = (
+
+    heatmap_df[
+        "Avg Institutional Score"
+    ]
+
+    *
+
+    heatmap_df[
+        "Avg Confidence"
+    ]
+)
+
+# =========================================================
 # TOP CONVICTION PICKS
 # =========================================================
 
 top_conviction_df = filtered_df.sort_values(
 
-    by="Composite Score",
+    by=sort_column,
 
     ascending=False
 
@@ -611,6 +660,7 @@ with status_col3:
     st.info(
         f"📊 Regime: {market_regime}"
     )
+
 # =========================================================
 # UNIVERSE METRICS
 # =========================================================
@@ -633,6 +683,7 @@ success_rate = round(
 
     2
 )
+
 # =========================================================
 # KPI SECTION
 # =========================================================
@@ -710,6 +761,48 @@ metric8.metric(
     "Confidence",
     avg_confidence
 )
+
+# =========================================================
+# INSTITUTIONAL HEATMAP
+# =========================================================
+
+st.markdown("---")
+
+st.subheader(
+    "Institutional Sector Heatmap"
+)
+
+fig_heatmap = px.treemap(
+
+    heatmap_df,
+
+    path=["Sector"],
+
+    values="Stock Count",
+
+    color="Capital Flow Score",
+
+    hover_data=[
+
+        "Avg Institutional Score",
+
+        "Avg Confidence",
+
+        "Avg Price"
+    ],
+
+    color_continuous_scale="RdYlGn"
+)
+
+fig_heatmap.update_layout(
+    height=700
+)
+
+st.plotly_chart(
+    fig_heatmap,
+    use_container_width=True
+)
+
 # =========================================================
 # LOAD PRICE HISTORY
 # =========================================================
@@ -1128,6 +1221,96 @@ if not hist_df.empty:
 
         use_container_width=True
     )
+
+# =========================================================
+# TOP CONVICTION PICKS
+# =========================================================
+
+st.markdown("---")
+
+st.subheader(
+    "Top Institutional Conviction Picks"
+)
+
+conviction_columns = [
+
+    "Stock",
+
+    "Sector",
+
+    "Trade Signal",
+
+    "Current Price",
+
+    "Confidence",
+
+    sort_column
+]
+
+available_conviction_columns = [
+
+    col
+
+    for col in conviction_columns
+
+    if col in top_conviction_df.columns
+]
+
+st.dataframe(
+
+    top_conviction_df[
+        available_conviction_columns
+    ],
+
+    use_container_width=True,
+
+    height=350
+)
+
+# =========================================================
+# INSTITUTIONAL WATCHLIST
+# =========================================================
+
+st.markdown("---")
+
+st.subheader(
+    "Institutional Watchlist"
+)
+
+watchlist_columns = [
+
+    "Stock",
+
+    "Sector",
+
+    "Trade Signal",
+
+    "Current Price",
+
+    "Confidence",
+
+    "Institutional Score"
+]
+
+available_watchlist_columns = [
+
+    col
+
+    for col in watchlist_columns
+
+    if col in watchlist_df.columns
+]
+
+st.dataframe(
+
+    watchlist_df[
+        available_watchlist_columns
+    ],
+
+    use_container_width=True,
+
+    height=450
+)
 
 # =========================================================
 # DOWNLOADS
