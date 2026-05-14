@@ -1,6 +1,5 @@
 # =========================================================
 # MARKET EXTRACTOR
-# MULTI-SOURCE INSTITUTIONAL MARKET ENGINE
 # =========================================================
 
 import time
@@ -31,14 +30,6 @@ def extract_market_data(ticker):
     try:
 
         # =================================================
-        # VALIDATE TICKER
-        # =================================================
-
-        if ticker is None:
-
-            return {}
-
-        # =================================================
         # SYMBOL
         # =================================================
 
@@ -60,7 +51,7 @@ def extract_market_data(ticker):
         ).strip().upper()
 
         # =================================================
-        # ENSURE NSE FORMAT
+        # NSE FORMAT
         # =================================================
 
         if not symbol.endswith(".NS"):
@@ -68,21 +59,21 @@ def extract_market_data(ticker):
             symbol = f"{symbol}.NS"
 
         # =================================================
-        # HUMAN-LIKE DELAY
+        # HUMAN DELAY
         # =================================================
 
         time.sleep(
 
             random.uniform(
 
-                1.0,
+                2,
 
-                3.0
+                5
             )
         )
 
         # =================================================
-        # REFRESH TICKER USING SHARED SESSION
+        # REFRESHED TICKER
         # =================================================
 
         refreshed_ticker = yf.Ticker(
@@ -93,7 +84,7 @@ def extract_market_data(ticker):
         )
 
         # =================================================
-        # RETRY MULTI-SOURCE FETCH
+        # FETCH MARKET DATA
         # =================================================
 
         market_data = retry_request(
@@ -104,7 +95,7 @@ def extract_market_data(ticker):
 
             retries=5,
 
-            base_delay=3
+            base_delay=5
         )
 
         # =================================================
@@ -123,10 +114,10 @@ def extract_market_data(ticker):
             return {}
 
         # =================================================
-        # BASIC FALLBACKS
+        # FAST INFO
         # =================================================
 
-        fallback_price = None
+        fallback_price = 0
 
         try:
 
@@ -136,15 +127,15 @@ def extract_market_data(ticker):
 
                 "lastPrice",
 
-                None
+                0
             )
 
         except:
 
-            fallback_price = None
+            fallback_price = 0
 
         # =================================================
-        # SAFE DEFAULT VALUES
+        # SAFE MARKET DATA
         # =================================================
 
         safe_market_data = {
@@ -156,8 +147,6 @@ def extract_market_data(ticker):
                 "Current Price",
 
                 fallback_price
-                if fallback_price is not None
-                else 0
             ),
 
             "Market Cap":
@@ -260,17 +249,15 @@ def extract_market_data(ticker):
                 ):
 
                     safe_market_data[key] = float(
+
                         str(value)
+
                         .replace(",", "")
                     )
 
             except:
 
                 safe_market_data[key] = 0
-
-        # =================================================
-        # RETURN CLEAN DATA
-        # =================================================
 
         return safe_market_data
 
