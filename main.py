@@ -1,3 +1,4 @@
+
 # =========================================================
 # IMPORTS
 # =========================================================
@@ -7,7 +8,6 @@ import random
 import pandas as pd
 import yfinance as yf
 import multiprocessing
-
 
 from concurrent.futures import (
     ThreadPoolExecutor,
@@ -64,9 +64,9 @@ MAX_WORKERS = 3
 # BATCH CONFIG
 # =========================================================
 
-BATCH_SIZE = 100
+BATCH_SIZE = 25
 
-BATCH_SLEEP = 5
+BATCH_SLEEP = 12
 
 # =========================================================
 # PATHS
@@ -198,10 +198,62 @@ print("DuckDB Connected")
 # =========================================================
 
 results = []
-
 failed = []
 
-success_count = 0
+# =========================================================
+# CHECKPOINT FILES
+# =========================================================
+
+PARTIAL_RESULTS_FILE = (
+    OUTPUT_DIR
+    / "partial_results.csv"
+)
+
+PARTIAL_FAILED_FILE = (
+    OUTPUT_DIR
+    / "partial_failed.csv"
+)
+
+# =========================================================
+# AUTO RESUME
+# =========================================================
+
+if PARTIAL_RESULTS_FILE.exists():
+
+    try:
+
+        partial_df = pd.read_csv(
+            PARTIAL_RESULTS_FILE
+        )
+
+        results = partial_df.to_dict(
+            orient="records"
+        )
+
+        processed_stocks = set(
+
+            partial_df[
+                "Stock"
+            ].astype(str)
+        )
+
+        df = df[
+
+            ~df["Stock"].isin(
+                processed_stocks
+            )
+        ]
+
+        print(
+            f"Resuming from "
+            f"{len(results)} stocks"
+        )
+
+    except:
+
+        pass
+
+success_count = len(results)
 
 failure_count = 0
 
@@ -241,19 +293,20 @@ def process_stock(row):
         print(
             f"Processing : {stock}"
         )
-# =================================================
-# HUMAN-LIKE DELAY
-# =================================================
 
-time.sleep(
+        # =================================================
+        # HUMAN-LIKE DELAY
+        # =================================================
 
-    random.uniform(
+        time.sleep(
 
-        1.5,
+            random.uniform(
 
-        4.0
-    )
-)
+                1.5,
+
+                4.0
+            )
+        )
 
         # =================================================
         # VALIDATE SYMBOL
@@ -473,6 +526,39 @@ for batch_num, batch_df in enumerate(
 
                     success_count += 1
 
+                    # =========================================================
+                    # SAVE PARTIAL PROGRESS
+                    # =========================================================
+
+                    if success_count % 50 == 0:
+
+                        partial_df = pd.DataFrame(
+                            results
+                        )
+
+                        partial_df.to_csv(
+
+                            PARTIAL_RESULTS_FILE,
+
+                            index=False
+                        )
+
+                        failed_partial_df = pd.DataFrame(
+                            failed
+                        )
+
+                        failed_partial_df.to_csv(
+
+                            PARTIAL_FAILED_FILE,
+
+                            index=False
+                        )
+
+                        print(
+                            f"Checkpoint Saved : "
+                            f"{success_count}"
+                        )
+
                     print(
                         f"SUCCESS : "
                         f"{success_count}"
@@ -550,9 +636,25 @@ print("=" * 60)
 print("TRAINING ML MODEL...")
 print("=" * 60)
 
-ml_model, ml_accuracy = train_ml_model(
-    final_df
-)
+# =========================================================
+# SAFE ML TRAINING
+# =========================================================
+
+if final_df.empty:
+
+    print(
+        "No valid stocks processed."
+    )
+
+    ml_model = None
+
+    ml_accuracy = 0
+
+else:
+
+    ml_model, ml_accuracy = train_ml_model(
+        final_df
+    )
 
 print(
     f"ML Accuracy : "
@@ -610,10 +712,6 @@ conn.execute(
     """
 )
 
-# =========================================================
-# SAVE CLEAN STOCK DATA
-# =========================================================
-
 conn.register(
     "final_df",
     final_df
@@ -628,10 +726,6 @@ conn.execute(
     FROM final_df
     """
 )
-
-# =========================================================
-# SAVE PORTFOLIO
-# =========================================================
 
 conn.register(
     "portfolio_df",
@@ -649,49 +743,6 @@ conn.execute(
 )
 
 # =========================================================
-# EXPORT BACKTEST
-# =========================================================
-
-if backtest_results is not None:
-
-    backtest_df = pd.DataFrame([{
-
-        "CAGR":
-        backtest_results.get(
-            "CAGR",
-            0
-        ),
-
-        "Sharpe Ratio":
-        backtest_results.get(
-            "Sharpe Ratio",
-            0
-        ),
-
-        "Max Drawdown":
-        backtest_results.get(
-            "Max Drawdown",
-            0
-        ),
-
-        "Volatility":
-        backtest_results.get(
-            "Volatility",
-            0
-        ),
-
-        "Win Rate":
-        backtest_results.get(
-            "Win Rate",
-            0
-        )
-    }])
-
-else:
-
-    backtest_df = pd.DataFrame()
-
-# =========================================================
 # EXPORT FILES
 # =========================================================
 
@@ -699,17 +750,9 @@ print("=" * 60)
 print("EXPORTING CSV + XLSX FILES...")
 print("=" * 60)
 
-# =========================================================
-# ENSURE OUTPUT DIRECTORY
-# =========================================================
-
 OUTPUT_DIR.mkdir(
     exist_ok=True
 )
-
-# =========================================================
-# SAFE SORT COLUMN
-# =========================================================
 
 sort_column = None
 
@@ -730,17 +773,9 @@ for column in [
 
         break
 
-# =========================================================
-# FALLBACK
-# =========================================================
-
 if sort_column is None:
 
     sort_column = final_df.columns[0]
-
-# =========================================================
-# SORTED DATAFRAME
-# =========================================================
 
 sorted_df = final_df.sort_values(
 
@@ -749,105 +784,7 @@ sorted_df = final_df.sort_values(
     ascending=False
 )
 
-# =========================================================
-# TOP PICKS
-# =========================================================
-
 top_picks_df = sorted_df.head(100)
-
-# =========================================================
-# STRONG BUYS
-# =========================================================
-
-if "Trade Signal" in final_df.columns:
-
-    strong_buy_df = final_df[
-
-        final_df[
-            "Trade Signal"
-        ].isin(
-            [
-                "Strong Buy",
-                "Buy"
-            ]
-        )
-    ]
-
-else:
-
-    strong_buy_df = pd.DataFrame()
-
-# =========================================================
-# SECTOR LEADERS
-# =========================================================
-
-if "Sector" in final_df.columns:
-
-    sector_leaders = (
-
-        sorted_df
-
-        .groupby("Sector")
-
-        .head(5)
-    )
-
-else:
-
-    sector_leaders = pd.DataFrame()
-
-# =========================================================
-# QUANT LEADERS
-# =========================================================
-
-quant_leaders = sorted_df.head(100)
-
-# =========================================================
-# BACKTEST DATAFRAME
-# =========================================================
-
-if backtest_results is not None:
-
-    backtest_df = pd.DataFrame([{
-
-        "CAGR":
-        backtest_results.get(
-            "CAGR",
-            0
-        ),
-
-        "Sharpe Ratio":
-        backtest_results.get(
-            "Sharpe Ratio",
-            0
-        ),
-
-        "Max Drawdown":
-        backtest_results.get(
-            "Max Drawdown",
-            0
-        ),
-
-        "Volatility":
-        backtest_results.get(
-            "Volatility",
-            0
-        ),
-
-        "Win Rate":
-        backtest_results.get(
-            "Win Rate",
-            0
-        )
-    }])
-
-else:
-
-    backtest_df = pd.DataFrame()
-
-# =========================================================
-# EXPORT CSV FILES
-# =========================================================
 
 csv_exports = {
 
@@ -861,37 +798,23 @@ csv_exports = {
     failed_df,
 
     "top_institutional_picks.csv":
-    top_picks_df,
-
-    "strong_buy_stocks.csv":
-    strong_buy_df,
-
-    "sector_leaders.csv":
-    sector_leaders,
-
-    "top_quant_stocks.csv":
-    quant_leaders,
-
-    "backtest_results.csv":
-    backtest_df
+    top_picks_df
 }
 
 for filename, dataframe in csv_exports.items():
 
     try:
 
-        if dataframe is not None:
+        dataframe.to_csv(
 
-            dataframe.to_csv(
+            OUTPUT_DIR / filename,
 
-                OUTPUT_DIR / filename,
+            index=False
+        )
 
-                index=False
-            )
-
-            print(
-                f"CSV Exported : {filename}"
-            )
+        print(
+            f"CSV Exported : {filename}"
+        )
 
     except Exception as e:
 
@@ -899,10 +822,6 @@ for filename, dataframe in csv_exports.items():
             f"CSV Export Failed : "
             f"{filename} | {e}"
         )
-
-# =========================================================
-# EXPORT XLSX FILES
-# =========================================================
 
 xlsx_exports = {
 
@@ -916,37 +835,23 @@ xlsx_exports = {
     failed_df,
 
     "top_institutional_picks.xlsx":
-    top_picks_df,
-
-    "strong_buy_stocks.xlsx":
-    strong_buy_df,
-
-    "sector_leaders.xlsx":
-    sector_leaders,
-
-    "top_quant_stocks.xlsx":
-    quant_leaders,
-
-    "backtest_results.xlsx":
-    backtest_df
+    top_picks_df
 }
 
 for filename, dataframe in xlsx_exports.items():
 
     try:
 
-        if dataframe is not None:
+        dataframe.to_excel(
 
-            dataframe.to_excel(
+            OUTPUT_DIR / filename,
 
-                OUTPUT_DIR / filename,
+            index=False
+        )
 
-                index=False
-            )
-
-            print(
-                f"XLSX Exported : {filename}"
-            )
+        print(
+            f"XLSX Exported : {filename}"
+        )
 
     except Exception as e:
 
