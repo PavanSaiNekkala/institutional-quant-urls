@@ -1,1 +1,146 @@
+name: Institutional Data Pipeline
 
+on:
+
+  schedule:
+    - cron: "30 2 * * *"
+
+  workflow_dispatch:
+
+# =========================================================
+# REQUIRED FOR PUSHING OUTPUT FILES
+# =========================================================
+
+permissions:
+  contents: write
+
+jobs:
+
+  build:
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 360
+
+    steps:
+
+      # ===================================================
+      # CHECKOUT
+      # ===================================================
+
+      - name: Checkout Repository
+
+        uses: actions/checkout@v4
+
+        with:
+          fetch-depth: 0
+
+      # ===================================================
+      # PYTHON
+      # ===================================================
+
+      - name: Setup Python
+
+        uses: actions/setup-python@v5
+
+        with:
+          python-version: "3.11"
+
+      # ===================================================
+      # INSTALL
+      # ===================================================
+
+      - name: Install Dependencies
+
+        run: |
+
+          python -m pip install --upgrade pip
+
+          pip install -r requirements.txt
+
+      # ===================================================
+      # CREATE DIRECTORIES
+      # ===================================================
+
+      - name: Create Required Directories
+
+        run: |
+
+          mkdir -p output
+          mkdir -p database
+          mkdir -p logs
+          mkdir -p cache
+          mkdir -p failed
+
+      # ===================================================
+      # CLEAN OLD GENERATED FILES
+      # ===================================================
+
+      - name: Remove Old Generated Files
+
+        run: |
+
+          rm -f database/*.db || true
+          rm -f database/*.duckdb || true
+
+          rm -f output/*.xlsx || true
+          rm -f output/*.csv || true
+          rm -f output/*.parquet || true
+
+      # ===================================================
+      # RUN MAIN PIPELINE
+      # ===================================================
+
+      - name: Run Institutional Pipeline
+
+        run: |
+
+          python main_distributed.py
+
+      # ===================================================
+      # VERIFY OUTPUTS
+      # ===================================================
+
+      - name: Verify Outputs
+
+        run: |
+
+          echo "===== OUTPUT FILES ====="
+
+          ls -lh output || true
+
+          echo "===== DATABASE FILES ====="
+
+          ls -lh database || true
+
+      # ===================================================
+      # COMMIT GENERATED FILES
+      # ===================================================
+
+      - name: Commit Fresh Outputs
+
+        run: |
+
+          git config --global user.name "github-actions"
+
+          git config --global user.email "actions@github.com"
+
+          # =================================================
+          # FORCE ADD GENERATED FILES
+          # =================================================
+
+          git add -f output/*.csv || true
+          git add -f output/*.xlsx || true
+          git add -f database/*.db || true
+
+          # =================================================
+          # COMMIT
+          # =================================================
+
+          git commit -m "Daily institutional rebuild" || echo "No changes to commit"
+
+          # =================================================
+          # PUSH
+          # =================================================
+
+          git push origin main
