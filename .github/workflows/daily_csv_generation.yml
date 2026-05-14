@@ -7,6 +7,13 @@ on:
 
   workflow_dispatch:
 
+# =========================================================
+# REQUIRED FOR PUSHING OUTPUT FILES
+# =========================================================
+
+permissions:
+  contents: write
+
 jobs:
 
   build:
@@ -22,6 +29,9 @@ jobs:
       - name: Checkout Repository
 
         uses: actions/checkout@v4
+
+        with:
+          fetch-depth: 0
 
       # ===================================================
       # PYTHON
@@ -47,6 +57,20 @@ jobs:
           pip install -r requirements.txt
 
       # ===================================================
+      # CREATE REQUIRED DIRECTORIES
+      # ===================================================
+
+      - name: Create Required Directories
+
+        run: |
+
+          mkdir -p output
+          mkdir -p database
+          mkdir -p logs
+          mkdir -p cache
+          mkdir -p failed
+
+      # ===================================================
       # CLEAN OLD GENERATED FILES
       # ===================================================
 
@@ -58,6 +82,7 @@ jobs:
           rm -f database/*.duckdb || true
 
           rm -f output/*.xlsx || true
+          rm -f output/*.csv || true
           rm -f output/*.parquet || true
 
           rm -f cache/* || true
@@ -80,7 +105,13 @@ jobs:
 
         run: |
 
-          ls output
+          echo "===== OUTPUT FILES ====="
+
+          ls -lh output || true
+
+          echo "===== DATABASE FILES ====="
+
+          ls -lh database || true
 
       # ===================================================
       # COMMIT GENERATED FILES
@@ -94,8 +125,22 @@ jobs:
 
           git config --global user.email "actions@github.com"
 
-          git add output/*.xlsx || true
+          # =================================================
+          # FORCE ADD OUTPUT FILES
+          # =================================================
 
-          git commit -m "Daily institutional rebuild" || echo "No changes"
+          git add -f output/*.csv || true
+          git add -f output/*.xlsx || true
+          git add -f database/*.db || true
 
-          git push
+          # =================================================
+          # COMMIT
+          # =================================================
+
+          git commit -m "Daily institutional rebuild" || echo "No changes to commit"
+
+          # =================================================
+          # PUSH
+          # =================================================
+
+          git push origin main
