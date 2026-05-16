@@ -531,7 +531,7 @@ st.plotly_chart(
 
         signal_chart,
 
-        use_container_width=True
+        width="stretch"
 
 )
 
@@ -557,7 +557,7 @@ st.dataframe(
 
         top_picks,
 
-        use_container_width=True,
+        width="stretch",
         height=500
 
 )
@@ -592,7 +592,7 @@ if not sector_leaders.empty:
 
                 sector_leaders,
 
-                use_container_width=True,
+                width="stretch",
                 height=400
 
         )
@@ -609,7 +609,7 @@ st.dataframe(
 
         sector_leaders,
 
-        use_container_width=True,
+        width="stretch",
         height=400
 
 )
@@ -635,7 +635,7 @@ if not elite_df.empty:
 
                 elite_df,
 
-                use_container_width=True,
+                width="stretch",
                 height=400
 
         )
@@ -648,7 +648,7 @@ st.dataframe(
 
         elite_df,
 
-        use_container_width=True,
+        width="stretch",
         height=400
 
 )
@@ -688,7 +688,7 @@ st.plotly_chart(
 
         heatmap,
 
-        use_container_width=True
+        width="stretch"
 
 )
 
@@ -722,7 +722,7 @@ st.plotly_chart(
 
         heatmap,
 
-        use_container_width=True
+        width="stretch"
 
 )
 
@@ -755,7 +755,7 @@ st.plotly_chart(
 
         momentum_chart,
 
-        use_container_width=True
+        width="stretch"
 
 )
 
@@ -835,7 +835,7 @@ st.dataframe(
 
         styled_df,
 
-        use_container_width=True,
+        width="stretch",
         height=800
 
 )
@@ -853,7 +853,7 @@ st.dataframe(
 
         ),
 
-        use_container_width=True,
+        width="stretch",
         height=800
 
 )
