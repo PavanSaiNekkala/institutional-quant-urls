@@ -567,7 +567,28 @@ else:
 
         sector_leaders = pd.DataFrame()
 
-].sort_values(
+if not sector_leaders.empty:
+
+        sector_leaders = sector_leaders.sort_values(
+
+                by="Sector Percentile",
+
+                ascending=False
+
+        )
+
+        st.dataframe(
+
+                sector_leaders,
+
+                use_container_width=True,
+                height=400
+
+        )
+
+else:
+
+        st.info("No sector leaders available.")
 
         by="Sector Percentile",
 
@@ -599,7 +620,20 @@ else:
 
         elite_df = pd.DataFrame()
 
-]
+if not elite_df.empty:
+
+        st.dataframe(
+
+                elite_df,
+
+                use_container_width=True,
+                height=400
+
+        )
+
+else:
+
+        st.info("No elite stocks available.")
 
 st.dataframe(
 
