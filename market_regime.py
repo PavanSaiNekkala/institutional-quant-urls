@@ -4,48 +4,47 @@
 
 import yfinance as yf
 import pandas as pd
+import streamlit as st
+
+
+@st.cache_data(ttl=3600)
+def fetch_nifty_data():
+
+    return yf.download(
+        "^NSEI",
+        period="1y",
+        interval="1d",
+        progress=False,
+        auto_adjust=True
+    )
 
 
 def get_market_regime():
 
     try:
 
-        # =========================================
-        # DOWNLOAD NIFTY DATA
-        # =========================================
-
-        nifty = yf.download(
-            "^NSEI",
-            period="1y",
-            interval="1d",
-            progress=False
-        )
+        nifty = fetch_nifty_data()
 
         # =========================================
-        # EMPTY SAFETY
+        # SAFETY
         # =========================================
 
         if nifty.empty:
 
-            return (
-                "UNKNOWN",
-                "#808080",
-                {
-                    "NIFTY": "N/A",
-                    "SMA50": "N/A",
-                    "SMA200": "N/A",
-                    "RSI": "N/A"
-                }
-            )
+            raise Exception("Empty NIFTY data")
 
         # =========================================
-        # CLOSE PRICE
+        # CLOSE
         # =========================================
 
         close = nifty["Close"]
 
+        # Handle dataframe/series issue
+        if isinstance(close, pd.DataFrame):
+            close = close.iloc[:, 0]
+
         # =========================================
-        # MOVING AVERAGES
+        # SMA
         # =========================================
 
         sma50 = close.rolling(50).mean().iloc[-1]
@@ -75,7 +74,7 @@ def get_market_regime():
         latest_rsi = float(rsi.iloc[-1])
 
         # =========================================
-        # REGIME LOGIC
+        # REGIME
         # =========================================
 
         if latest > sma50 > sma200 and latest_rsi > 55:
@@ -92,10 +91,6 @@ def get_market_regime():
 
             regime = "BEAR MARKET"
             color = "#8B0000"
-
-        # =========================================
-        # RETURN
-        # =========================================
 
         return (
 
@@ -118,7 +113,7 @@ def get_market_regime():
 
         return (
 
-            "UNKNOWN",
+            "DATA UNAVAILABLE",
 
             "#808080",
 
