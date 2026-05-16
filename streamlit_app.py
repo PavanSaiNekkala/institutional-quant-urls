@@ -259,15 +259,14 @@ signal_order = [
         "AVOID"
 
 ]
-signal_colors = {
-
-        "STRONG BUY": "#006400",   # Dark Green
-        "BUY": "#00AA00",          # Green
-        "WATCH": "#FF8C00",        # Orange
-        "HOLD": "#1E90FF",         # Blue
-        "AVOID": "#FF0000"         # Red
-
+signal_color_map = {
+    "STRONG BUY": "#006400",   # dark green
+    "BUY": "#00AA00",          # green
+    "WATCH": "#FF8C00",        # orange
+    "HOLD": "#1E90FF",         # blue
+    "AVOID": "#FF4B4B"         # red
 }
+
 selected_trade_signal = st.sidebar.multiselect(
 
         "Trade Signal",
@@ -333,7 +332,50 @@ selected_sectors = st.sidebar.multiselect(
 # =========================================================
 
 filtered_df = df.copy()
+# =========================================================
+# SMART SIGNAL ENGINE
+# =========================================================
 
+def generate_trade_signal(row):
+
+    score = row.get("Institutional_Score", 0)
+    rsi = row.get("RSI", 50)
+    revenue_growth = row.get("Revenue_Growth", 0)
+    institutional_change = row.get("Institutional_Change", 0)
+
+    # STRONG BUY
+    if (
+        score >= 90
+        and 50 <= rsi <= 70
+        and revenue_growth > 0
+        and institutional_change > 0
+    ):
+        return "STRONG BUY"
+
+    # BUY
+    elif (
+        score >= 75
+        and rsi > 45
+    ):
+        return "BUY"
+
+    # WATCH
+    elif score >= 60:
+        return "WATCH"
+
+    # HOLD
+    elif score >= 45:
+        return "HOLD"
+
+    # AVOID
+    else:
+        return "AVOID"
+
+
+filtered_df["Trade_Signal"] = filtered_df.apply(
+    generate_trade_signal,
+    axis=1
+)
 # =========================================================
 # SEARCH FILTER
 # =========================================================
@@ -417,7 +459,27 @@ st.title(
 st.caption(
         "AI Powered Institutional Analytics Engine"
 )
+from market_regime import get_market_regime
 
+regime, regime_color = get_market_regime()
+
+st.markdown(
+    f"""
+    <div style="
+        background-color:{regime_color};
+        padding:15px;
+        border-radius:10px;
+        text-align:center;
+        font-size:28px;
+        font-weight:bold;
+        color:white;
+        margin-bottom:20px;
+    ">
+        MARKET REGIME : {regime}
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 # =========================================================
 # EMPTY FILTER SAFETY
 # =========================================================
