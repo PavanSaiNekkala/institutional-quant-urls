@@ -2,17 +2,53 @@ name: Institutional Data Pipeline
 
 on:
 
+  # =======================================================
+  # DAILY SCHEDULE
+  # =======================================================
+
   schedule:
     - cron: "30 2 * * *"
+
+  # =======================================================
+  # MANUAL TRIGGER
+  # =======================================================
 
   workflow_dispatch:
 
 # =========================================================
-# REQUIRED FOR PUSHING OUTPUT FILES
+# PREVENT OVERLAPPING RUNS
+# =========================================================
+
+concurrency:
+
+  group: institutional-pipeline
+
+  cancel-in-progress: true
+
+# =========================================================
+# REQUIRED GITHUB PERMISSIONS
 # =========================================================
 
 permissions:
   contents: write
+
+# =========================================================
+# GLOBAL ENVIRONMENT VARIABLES
+# =========================================================
+
+env:
+
+  PYTHONUNBUFFERED: "1"
+
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+  PIP_NO_CACHE_DIR: "1"
+
+  TZ: "Asia/Kolkata"
+
+# =========================================================
+# JOBS
+# =========================================================
 
 jobs:
 
@@ -22,10 +58,14 @@ jobs:
 
     timeout-minutes: 360
 
+    strategy:
+
+      fail-fast: false
+
     steps:
 
       # ===================================================
-      # CHECKOUT
+      # CHECKOUT REPOSITORY
       # ===================================================
 
       - name: Checkout Repository
@@ -33,10 +73,13 @@ jobs:
         uses: actions/checkout@v4
 
         with:
+
           fetch-depth: 0
 
+          persist-credentials: true
+
       # ===================================================
-      # PYTHON
+      # SETUP PYTHON
       # ===================================================
 
       - name: Setup Python
@@ -44,22 +87,47 @@ jobs:
         uses: actions/setup-python@v5
 
         with:
+
           python-version: "3.11"
 
+          cache: "pip"
+
       # ===================================================
-      # INSTALL
+      # SYSTEM INFORMATION
+      # ===================================================
+
+      - name: System Information
+
+        run: |
+
+          echo "======================================"
+          echo "SYSTEM INFORMATION"
+          echo "======================================"
+
+          python --version
+
+          pip --version
+
+          echo "CPU CORES:"
+          nproc
+
+          echo "MEMORY:"
+          free -h
+
+      # ===================================================
+      # INSTALL DEPENDENCIES
       # ===================================================
 
       - name: Install Dependencies
 
         run: |
 
-          python -m pip install --upgrade pip
+          python -m pip install --upgrade pip setuptools wheel
 
           pip install -r requirements.txt
 
       # ===================================================
-      # CREATE DIRECTORIES
+      # CREATE REQUIRED DIRECTORIES
       # ===================================================
 
       - name: Create Required Directories
@@ -71,6 +139,7 @@ jobs:
           mkdir -p logs
           mkdir -p cache
           mkdir -p failed
+          mkdir -p backups
 
       # ===================================================
       # CLEAN OLD GENERATED FILES
@@ -80,12 +149,16 @@ jobs:
 
         run: |
 
+          echo "======================================"
+          echo "CLEANING OLD FILES"
+          echo "======================================"
+
+          rm -f output/*.csv || true
+          rm -f output/*.xlsx || true
+          rm -f output/*.parquet || true
+
           rm -f database/*.db || true
           rm -f database/*.duckdb || true
-
-          rm -f output/*.xlsx || true
-          rm -f output/*.csv || true
-          rm -f output/*.parquet || true
 
       # ===================================================
       # RUN MAIN PIPELINE
@@ -94,6 +167,10 @@ jobs:
       - name: Run Institutional Pipeline
 
         run: |
+
+          echo "======================================"
+          echo "STARTING INSTITUTIONAL PIPELINE"
+          echo "======================================"
 
           python main.py
 
@@ -105,42 +182,163 @@ jobs:
 
         run: |
 
-          echo "===== OUTPUT FILES ====="
+          echo "======================================"
+          echo "OUTPUT FILES"
+          echo "======================================"
 
           ls -lh output || true
 
-          echo "===== DATABASE FILES ====="
+          echo "======================================"
+          echo "DATABASE FILES"
+          echo "======================================"
 
           ls -lh database || true
+
+          echo "======================================"
+          echo "LOG FILES"
+          echo "======================================"
+
+          ls -lh logs || true
+
+      # ===================================================
+      # UPLOAD CSV ARTIFACTS
+      # ===================================================
+
+      - name: Upload CSV Artifacts
+
+        uses: actions/upload-artifact@v4
+
+        with:
+
+          name: institutional-csv-files
+
+          path: |
+
+            output/*.csv
+
+          retention-days: 7
+
+          if-no-files-found: warn
+
+      # ===================================================
+      # UPLOAD DATABASE ARTIFACTS
+      # ===================================================
+
+      - name: Upload Database Artifacts
+
+        uses: actions/upload-artifact@v4
+
+        with:
+
+          name: institutional-database
+
+          path: |
+
+            database/*.db
+            database/*.duckdb
+
+          retention-days: 7
+
+          if-no-files-found: warn
+
+      # ===================================================
+      # CONFIGURE GIT
+      # ===================================================
+
+      - name: Configure Git
+
+        run: |
+
+          git config --global user.name "github-actions[bot]"
+
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      # ===================================================
+      # ADD GENERATED FILES
+      # ===================================================
+
+      - name: Stage Generated Files
+
+        run: |
+
+          echo "======================================"
+          echo "STAGING GENERATED FILES"
+          echo "======================================"
+
+          git add -f output/*.csv || true
+          git add -f output/*.xlsx || true
+
+          git add -f database/*.db || true
+          git add -f database/*.duckdb || true
+
+          echo "======================================"
+          echo "GIT STATUS"
+          echo "======================================"
+
+          git status
 
       # ===================================================
       # COMMIT GENERATED FILES
       # ===================================================
 
-      - name: Commit Fresh Outputs
+      - name: Commit Generated Files
 
         run: |
 
-          git config --global user.name "github-actions"
+          git diff --cached --quiet && echo "No changes detected" || git commit -m "Automated institutional pipeline update"
 
-          git config --global user.email "actions@github.com"
+      # ===================================================
+      # PUSH TO GITHUB
+      # ===================================================
 
-          # =================================================
-          # FORCE ADD GENERATED FILES
-          # =================================================
+      - name: Push Changes
 
-          git add -f output/*.csv || true
-          git add -f output/*.xlsx || true
-          git add -f database/*.db || true
-
-          # =================================================
-          # COMMIT
-          # =================================================
-
-          git commit -m "Daily institutional rebuild" || echo "No changes to commit"
-
-          # =================================================
-          # PUSH
-          # =================================================
+        run: |
 
           git push origin main
+
+      # ===================================================
+      # SUCCESS MESSAGE
+      # ===================================================
+
+      - name: Success Message
+
+        if: success()
+
+        run: |
+
+          echo "======================================"
+          echo "PIPELINE COMPLETED SUCCESSFULLY"
+          echo "======================================"
+
+      # ===================================================
+      # FAILURE DIAGNOSTICS
+      # ===================================================
+
+      - name: Failure Diagnostics
+
+        if: failure()
+
+        run: |
+
+          echo "======================================"
+          echo "PIPELINE FAILED"
+          echo "======================================"
+
+          echo "======================================"
+          echo "OUTPUT DIRECTORY"
+          echo "======================================"
+
+          ls -R output || true
+
+          echo "======================================"
+          echo "DATABASE DIRECTORY"
+          echo "======================================"
+
+          ls -R database || true
+
+          echo "======================================"
+          echo "LOG DIRECTORY"
+          echo "======================================"
+
+          ls -R logs || true
