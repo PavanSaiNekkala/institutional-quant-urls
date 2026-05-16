@@ -182,11 +182,11 @@ signal_order = [
 
 signal_colors = {
 
-    "STRONG BUY": "#006400",
+    "STRONG BUY": "#00FF66",
     "BUY": "#00AA00",
-    "WATCH": "#FF8C00",
-    "HOLD": "#1E90FF",
-    "AVOID": "#FF4B4B"
+    "WATCH": "#FFB000",
+    "HOLD": "#3399FF",
+    "AVOID": "#FF3333"
 
 }
 
@@ -200,7 +200,7 @@ min_score = st.sidebar.slider(
     "Minimum Institutional Score",
     0,
     100,
-    70
+    50
 )
 
 min_confidence = st.sidebar.slider(
@@ -550,6 +550,12 @@ avg_rsi = round(
     2
 )
 
+st.caption(
+    f"""
+    Strong Buy Criteria dynamically adapts to
+    {regime.lower()} conditions.
+    """
+)
 # =========================================================
 # METRIC CARDS
 # =========================================================
