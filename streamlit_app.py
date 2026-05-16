@@ -520,30 +520,34 @@ avg_rsi = round(filtered_df["RSI"].mean(), 2)
 # MARKET REGIME LOGIC
 # =========================================================
 
-if avg_score >= 85 and avg_rsi >= 60:
+# =========================================================
+# MARKET REGIME LOGIC
+# =========================================================
 
-    market_regime = "BULLISH"
-    market_color = "#006400"
+if avg_score >= 85:
+
+        market_regime = "BULLISH"
+        market_color = "#006400"
 
 elif avg_score >= 70:
 
-    market_regime = "RECOVERY"
-    market_color = "#00AA00"
+        market_regime = "RECOVERY"
+        market_color = "#00AA00"
 
 elif avg_score >= 55:
 
-    market_regime = "SIDEWAYS"
-    market_color = "#FF8C00"
+        market_regime = "SIDEWAYS"
+        market_color = "#FF8C00"
 
 elif avg_score >= 40:
 
-    market_regime = "WEAK"
-    market_color = "#1E90FF"
+        market_regime = "WEAK"
+        market_color = "#1E90FF"
 
 else:
 
-    market_regime = "BEARISH"
-    market_color = "#FF4B4B"
+        market_regime = "BEARISH"
+        market_color = "#FF4B4B"
 # =========================================================
 # EMPTY FILTER SAFETY
 # =========================================================
