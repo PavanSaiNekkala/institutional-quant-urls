@@ -226,7 +226,7 @@ for idx, row in stock_input_df.iterrows():
                     f"STATUS : {response.status_code}"
                 )
 
-                time.sleep(0.5)
+                time.sleep(1)
 
                 continue
 
