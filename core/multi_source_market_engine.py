@@ -3,8 +3,12 @@
 # =========================================================
 
 import time
+import traceback
 import requests
 import yfinance as yf
+
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from config.api_keys import (
 
@@ -13,6 +17,42 @@ from config.api_keys import (
     FINNHUB_API_KEY,
 
     TWELVEDATA_API_KEY
+)
+
+# =========================================================
+# GLOBAL REQUEST SESSION
+# =========================================================
+
+retry_strategy = Retry(
+
+    total=3,
+
+    backoff_factor=1,
+
+    status_forcelist=[
+        429,
+        500,
+        502,
+        503,
+        504
+    ]
+)
+
+adapter = HTTPAdapter(
+
+    max_retries=retry_strategy
+)
+
+http = requests.Session()
+
+http.mount(
+    "https://",
+    adapter
+)
+
+http.mount(
+    "http://",
+    adapter
 )
 
 # =========================================================
@@ -42,13 +82,19 @@ def safe_float(value):
 
         if value is None:
 
-            return 0
+            return 0.0
 
-        return float(value)
+        return float(
+
+            str(value)
+            .replace(",", "")
+            .replace("%", "")
+            .strip()
+        )
 
     except:
 
-        return 0
+        return 0.0
 
 
 # =========================================================
@@ -63,7 +109,12 @@ def safe_int(value):
 
             return 0
 
-        return int(value)
+        return int(float(
+
+            str(value)
+            .replace(",", "")
+            .strip()
+        ))
 
     except:
 
@@ -72,94 +123,140 @@ def safe_int(value):
 
 # =========================================================
 # YAHOO FINANCE
+# IMPORTANT:
+# NEVER PASS session=
 # =========================================================
 
 def fetch_yfinance(symbol):
 
     try:
 
-        # =============================================
-        # RATE LIMIT PROTECTION
-        # =============================================
-
         time.sleep(0.25)
 
-        # =============================================
-        # YFINANCE
-        # =============================================
+        # =================================================
+        # DO NOT USE requests.Session()
+        # =================================================
 
         ticker = yf.Ticker(symbol)
 
-        info = ticker.fast_info
-
-        market_cap = safe_float(
-            info.get("market_cap", 0)
-        )
+        fast_info = ticker.fast_info
 
         current_price = safe_float(
-            info.get("last_price", 0)
-        )
 
-        volume = safe_int(
-            info.get("last_volume", 0)
-        )
+            fast_info.get(
+                "lastPrice",
 
-        previous_close = safe_float(
-            info.get("previous_close", 0)
+                fast_info.get(
+                    "last_price",
+                    0
+                )
+            )
         )
-
-        day_high = safe_float(
-            info.get("day_high", 0)
-        )
-
-        day_low = safe_float(
-            info.get("day_low", 0)
-        )
-
-        currency = info.get(
-            "currency",
-            "INR"
-        )
-
-        exchange = info.get(
-            "exchange",
-            "NSE"
-        )
-
-        # =============================================
-        # VALIDITY CHECK
-        # =============================================
 
         if current_price <= 0:
 
             return None
 
-        return {
+        market_data = {
 
             "Source": "Yahoo",
 
-            "Market Cap": market_cap,
+            "Current Price":
+            current_price,
 
-            "Current Price": current_price,
+            "Market Cap":
 
-            "Previous Close": previous_close,
+            safe_float(
 
-            "Day High": day_high,
+                fast_info.get(
+                    "marketCap",
 
-            "Day Low": day_low,
+                    fast_info.get(
+                        "market_cap",
+                        0
+                    )
+                )
+            ),
 
-            "Volume": volume,
+            "Volume":
 
-            "Currency": currency,
+            safe_int(
 
-            "Exchange": exchange
+                fast_info.get(
+                    "lastVolume",
+
+                    fast_info.get(
+                        "last_volume",
+                        0
+                    )
+                )
+            ),
+
+            "Previous Close":
+
+            safe_float(
+
+                fast_info.get(
+                    "previousClose",
+
+                    fast_info.get(
+                        "previous_close",
+                        0
+                    )
+                )
+            ),
+
+            "Day High":
+
+            safe_float(
+
+                fast_info.get(
+                    "dayHigh",
+
+                    fast_info.get(
+                        "day_high",
+                        0
+                    )
+                )
+            ),
+
+            "Day Low":
+
+            safe_float(
+
+                fast_info.get(
+                    "dayLow",
+
+                    fast_info.get(
+                        "day_low",
+                        0
+                    )
+                )
+            ),
+
+            "Currency":
+
+            fast_info.get(
+                "currency",
+                "INR"
+            ),
+
+            "Exchange":
+
+            fast_info.get(
+                "exchange",
+                "NSE"
+            )
         }
+
+        return market_data
 
     except Exception as e:
 
         print(
-            f"Yahoo Failure : "
-            f"{symbol} | {e}"
+            f"Yahoo Failure | "
+            f"{symbol} | "
+            f"{str(e)}"
         )
 
         return None
@@ -186,7 +283,7 @@ def fetch_alpha_vantage(symbol):
             f"&apikey={ALPHA_VANTAGE_API_KEY}"
         )
 
-        response = requests.get(
+        response = http.get(
 
             url,
 
@@ -209,20 +306,6 @@ def fetch_alpha_vantage(symbol):
             )
         )
 
-        volume = safe_int(
-            quote.get(
-                "06. volume",
-                0
-            )
-        )
-
-        previous_close = safe_float(
-            quote.get(
-                "08. previous close",
-                0
-            )
-        )
-
         if current_price <= 0:
 
             return None
@@ -231,18 +314,34 @@ def fetch_alpha_vantage(symbol):
 
             "Source": "AlphaVantage",
 
-            "Current Price": current_price,
+            "Current Price":
+            current_price,
 
-            "Previous Close": previous_close,
+            "Previous Close":
 
-            "Volume": volume
+            safe_float(
+                quote.get(
+                    "08. previous close",
+                    0
+                )
+            ),
+
+            "Volume":
+
+            safe_int(
+                quote.get(
+                    "06. volume",
+                    0
+                )
+            )
         }
 
     except Exception as e:
 
         print(
-            f"AlphaVantage Failure : "
-            f"{symbol} | {e}"
+            f"AlphaVantage Failure | "
+            f"{symbol} | "
+            f"{str(e)}"
         )
 
         return None
@@ -267,7 +366,7 @@ def fetch_finnhub(symbol):
             f"&token={FINNHUB_API_KEY}"
         )
 
-        response = requests.get(
+        response = http.get(
 
             url,
 
@@ -282,18 +381,6 @@ def fetch_finnhub(symbol):
             data.get("c", 0)
         )
 
-        previous_close = safe_float(
-            data.get("pc", 0)
-        )
-
-        day_high = safe_float(
-            data.get("h", 0)
-        )
-
-        day_low = safe_float(
-            data.get("l", 0)
-        )
-
         if current_price <= 0:
 
             return None
@@ -302,20 +389,31 @@ def fetch_finnhub(symbol):
 
             "Source": "Finnhub",
 
-            "Current Price": current_price,
+            "Current Price":
+            current_price,
 
-            "Previous Close": previous_close,
+            "Previous Close":
+            safe_float(
+                data.get("pc", 0)
+            ),
 
-            "Day High": day_high,
+            "Day High":
+            safe_float(
+                data.get("h", 0)
+            ),
 
-            "Day Low": day_low
+            "Day Low":
+            safe_float(
+                data.get("l", 0)
+            )
         }
 
     except Exception as e:
 
         print(
-            f"Finnhub Failure : "
-            f"{symbol} | {e}"
+            f"Finnhub Failure | "
+            f"{symbol} | "
+            f"{str(e)}"
         )
 
         return None
@@ -340,7 +438,7 @@ def fetch_twelvedata(symbol):
             f"&apikey={TWELVEDATA_API_KEY}"
         )
 
-        response = requests.get(
+        response = http.get(
 
             url,
 
@@ -366,105 +464,16 @@ def fetch_twelvedata(symbol):
 
             "Source": "TwelveData",
 
-            "Current Price": current_price
+            "Current Price":
+            current_price
         }
 
     except Exception as e:
 
         print(
-            f"TwelveData Failure : "
-            f"{symbol} | {e}"
-        )
-
-        return None
-
-
-# =========================================================
-# NSE FALLBACK
-# =========================================================
-
-def fetch_nse(symbol):
-
-    try:
-
-        time.sleep(0.3)
-
-        clean_symbol = symbol.replace(
-            ".NS",
-            ""
-        )
-
-        url = (
-
-            "https://www.nseindia.com/api/"
-            f"quote-equity?symbol={clean_symbol}"
-        )
-
-        response = requests.get(
-
-            url,
-
-            headers=HEADERS,
-
-            timeout=15
-        )
-
-        data = response.json()
-
-        price_info = data.get(
-            "priceInfo",
-            {}
-        )
-
-        current_price = safe_float(
-            price_info.get(
-                "lastPrice",
-                0
-            )
-        )
-
-        previous_close = safe_float(
-            price_info.get(
-                "previousClose",
-                0
-            )
-        )
-
-        intra = price_info.get(
-            "intraDayHighLow",
-            {}
-        )
-
-        day_high = safe_float(
-            intra.get("max", 0)
-        )
-
-        day_low = safe_float(
-            intra.get("min", 0)
-        )
-
-        if current_price <= 0:
-
-            return None
-
-        return {
-
-            "Source": "NSE",
-
-            "Current Price": current_price,
-
-            "Previous Close": previous_close,
-
-            "Day High": day_high,
-
-            "Day Low": day_low
-        }
-
-    except Exception as e:
-
-        print(
-            f"NSE Failure : "
-            f"{symbol} | {e}"
+            f"TwelveData Failure | "
+            f"{symbol} | "
+            f"{str(e)}"
         )
 
         return None
@@ -476,73 +485,57 @@ def fetch_nse(symbol):
 
 def fetch_market_data(symbol):
 
-    # =====================================================
-    # YAHOO FIRST
-    # =====================================================
+    try:
 
-    yahoo_data = fetch_yfinance(symbol)
+        yahoo_data = fetch_yfinance(symbol)
 
-    if yahoo_data is not None:
+        if yahoo_data is not None:
 
-        return yahoo_data
+            return yahoo_data
 
-    # =====================================================
-    # NSE SECOND
-    # =====================================================
+        finnhub_data = fetch_finnhub(symbol)
 
-    nse_data = fetch_nse(symbol)
+        if finnhub_data is not None:
 
-    if nse_data is not None:
+            return finnhub_data
 
-        return nse_data
+        alpha_data = fetch_alpha_vantage(symbol)
 
-    # =====================================================
-    # ALPHA VANTAGE
-    # =====================================================
+        if alpha_data is not None:
 
-    alpha_data = fetch_alpha_vantage(symbol)
+            return alpha_data
 
-    if alpha_data is not None:
+        twelvedata_data = fetch_twelvedata(symbol)
 
-        return alpha_data
+        if twelvedata_data is not None:
 
-    # =====================================================
-    # FINNHUB
-    # =====================================================
+            return twelvedata_data
 
-    finnhub_data = fetch_finnhub(symbol)
+        return {
 
-    if finnhub_data is not None:
+            "Source": "Unavailable",
 
-        return finnhub_data
+            "Market Cap": 0,
 
-    # =====================================================
-    # TWELVE DATA
-    # =====================================================
+            "Current Price": 0,
 
-    twelvedata_data = fetch_twelvedata(symbol)
+            "Previous Close": 0,
 
-    if twelvedata_data is not None:
+            "Day High": 0,
 
-        return twelvedata_data
+            "Day Low": 0,
 
-    # =====================================================
-    # FINAL FAILURE
-    # =====================================================
+            "Volume": 0
+        }
 
-    return {
+    except Exception as e:
 
-        "Source": "Unavailable",
+        print(
+            f"Market Data Failure | "
+            f"{symbol} | "
+            f"{str(e)}"
+        )
 
-        "Market Cap": 0,
+        traceback.print_exc()
 
-        "Current Price": 0,
-
-        "Previous Close": 0,
-
-        "Day High": 0,
-
-        "Day Low": 0,
-
-        "Volume": 0
-    }
+        return {}
