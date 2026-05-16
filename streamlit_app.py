@@ -480,76 +480,70 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
-# ============================================================
-# MARKET REGIME ENGINE
-# ============================================================
-
-market_regime = "SIDEWAYS"
-market_color = "#808080"
-
-try:
-
-        avg_score = float(
-                filtered_df["Institutional Score"].mean()
-        )
-
-        # SAFE RSI HANDLING
-        if "RSI" not in filtered_df.columns:
-
-                filtered_df["RSI"] = 55
-
-        filtered_df["RSI"] = pd.to_numeric(
-
-                filtered_df["RSI"],
-                errors="coerce"
-
-        ).fillna(55)
-
-        avg_rsi = float(
-                filtered_df["RSI"].mean()
-        )
-
-        # MARKET LOGIC
-        if avg_score >= 80 and avg_rsi >= 55:
-
-                market_regime = "BULLISH"
-                market_color = "#006400"
-
-        elif avg_score >= 65:
-
-                market_regime = "ACCUMULATION"
-                market_color = "#228B22"
-
-        elif avg_score >= 50:
-
-                market_regime = "SIDEWAYS"
-                market_color = "#FF8C00"
-
-        else:
-
-                market_regime = "BEARISH"
-                market_color = "#FF0000"
-
-except Exception as e:
-
-        print(f"Market regime error: {e}")
-
-        market_regime = "SIDEWAYS"
-        market_color = "#808080"
-
 # =========================================================
-# EMPTY FILTER SAFETY
+# LIVE MARKET REGIME
 # =========================================================
 
-if filtered_df.empty:
+market_regime, market_color, market_details = (
+        get_market_regime()
+)
 
-        st.warning(
-                "No stocks match selected filters."
-        )
+st.markdown(
 
-        st.stop()
+        f"""
+        <div style="
+                background:{market_color};
+                padding:18px;
+                border-radius:14px;
+                text-align:center;
+                font-size:34px;
+                font-weight:bold;
+                color:white;
+                margin-bottom:25px;
+        ">
+                MARKET REGIME : {market_regime}
+        </div>
+        """,
 
+        unsafe_allow_html=True
+
+)
+
+# =========================================================
+# MARKET DETAILS
+# =========================================================
+
+if market_details:
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+
+                st.metric(
+                        "NIFTY",
+                        market_details["NIFTY"]
+                )
+
+        with col2:
+
+                st.metric(
+                        "SMA50",
+                        market_details["SMA50"]
+                )
+
+        with col3:
+
+                st.metric(
+                        "SMA200",
+                        market_details["SMA200"]
+                )
+
+        with col4:
+
+                st.metric(
+                        "RSI",
+                        market_details["RSI"]
+                )
 # =========================================================
 # MARKET METRICS
 # =========================================================
