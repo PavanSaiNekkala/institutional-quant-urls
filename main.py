@@ -62,7 +62,7 @@ CPU_COUNT = multiprocessing.cpu_count()
 
 MAX_WORKERS = min(5, CPU_COUNT)
 
-BATCH_SIZE = 5
+BATCH_SIZE = 25
 
 BATCH_SLEEP = 3
 
