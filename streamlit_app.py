@@ -557,10 +557,15 @@ st.subheader(
         "🏆 Sector Leaders"
 )
 
-sector_leaders = filtered_df[
+if "Market Leader" in filtered_df.columns:
 
-        filtered_df["Market Leader"]
-        == "YES"
+        sector_leaders = filtered_df[
+                filtered_df["Market Leader"] == "YES"
+        ]
+
+else:
+
+        sector_leaders = pd.DataFrame()
 
 ].sort_values(
 
@@ -584,10 +589,15 @@ st.subheader(
         "🚀 Elite Institutional Stocks"
 )
 
-elite_df = filtered_df[
+if "Elite Stock" in filtered_df.columns:
 
-        filtered_df["Elite Stock"]
-        == "YES"
+        elite_df = filtered_df[
+                filtered_df["Elite Stock"] == "YES"
+        ]
+
+else:
+
+        elite_df = pd.DataFrame()
 
 ]
 
