@@ -139,27 +139,10 @@ def get_market_regime():
                 # =========================================
 
                 details = {
-
-                        "NIFTY": round(
-                                latest_close,
-                                2
-                        ),
-
-                        "SMA50": round(
-                                sma50,
-                                2
-                        ),
-
-                        "SMA200": round(
-                                sma200,
-                                2
-                        ),
-
-                        "RSI": round(
-                                rsi,
-                                2
-                        )
-
+                        "NIFTY": round(float(latest_close), 2),
+                        "SMA50": round(float(sma50), 2),
+                        "SMA200": round(float(sma200), 2),
+                        "RSI": round(float(rsi_value), 2)
                 }
 
                 return regime, color, details
