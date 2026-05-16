@@ -1,14 +1,18 @@
 # =========================================================
-# IMPORTS
+# ULTRA FAST INSTITUTIONAL PIPELINE
 # =========================================================
 
 import os
 import sys
 import time
 import random
+import warnings
+import multiprocessing
+
 import pandas as pd
 import yfinance as yf
-import multiprocessing
+
+from pathlib import Path
 
 from concurrent.futures import (
     ThreadPoolExecutor,
@@ -16,10 +20,13 @@ from concurrent.futures import (
     TimeoutError
 )
 
-from pathlib import Path
+warnings.filterwarnings("ignore")
+
+# =========================================================
+# INTERNAL IMPORTS
+# =========================================================
 
 from utils.symbol_validator import validate_symbol
-from utils.retry_engine import retry_request
 from utils.db_manager import get_connection
 from utils.sector_mapper import get_sector_data
 from utils.failure_handler import categorize_failure
@@ -60,19 +67,17 @@ from backtesting.backtest_engine import (
 
 CPU_COUNT = multiprocessing.cpu_count()
 
-MAX_WORKERS = min(5, CPU_COUNT)
+MAX_WORKERS = min(32, CPU_COUNT * 4)
 
-BATCH_SIZE = 25
+BATCH_SIZE = 100
 
-BATCH_SLEEP = 3
+BATCH_SLEEP = 0
 
-CHECKPOINT_INTERVAL = 200
+CHECKPOINT_INTERVAL = 500
 
-REQUEST_DELAY_MIN = 1.5
+THREAD_TIMEOUT = 45
 
-REQUEST_DELAY_MAX = 3.5
-
-THREAD_TIMEOUT = 120
+ENABLE_XLSX = False
 
 # =========================================================
 # PATHS
@@ -86,30 +91,15 @@ INPUT_FILE = (
     / "yfinance_stock_urls.xlsx"
 )
 
-OUTPUT_DIR = (
-    BASE_DIR
-    / "output"
-)
+OUTPUT_DIR = BASE_DIR / "output"
 
-DATABASE_DIR = (
-    BASE_DIR
-    / "database"
-)
+DATABASE_DIR = BASE_DIR / "database"
 
-LOG_DIR = (
-    BASE_DIR
-    / "logs"
-)
+LOG_DIR = BASE_DIR / "logs"
 
-FAILED_DIR = (
-    BASE_DIR
-    / "failed"
-)
+FAILED_DIR = BASE_DIR / "failed"
 
-CACHE_DIR = (
-    BASE_DIR
-    / "cache"
-)
+CACHE_DIR = BASE_DIR / "cache"
 
 # =========================================================
 # CREATE DIRECTORIES
@@ -131,21 +121,24 @@ for directory in [
     )
 
 # =========================================================
-# START
+# YFINANCE CACHE
+# =========================================================
+
+yf.set_tz_cache_location(
+    str(CACHE_DIR)
+)
+
+# =========================================================
+# LOAD DATASET
 # =========================================================
 
 print("=" * 60)
 print("LOADING DATASET...")
 print("=" * 60)
+
 sys.stdout.flush()
 
-# =========================================================
-# LOAD INPUT
-# =========================================================
-
-df = pd.read_excel(
-    INPUT_FILE
-)
+df = pd.read_excel(INPUT_FILE)
 
 # =========================================================
 # CLEAN SYMBOLS
@@ -178,23 +171,17 @@ df = df.reset_index(
     drop=True
 )
 
-# =========================================================
-# PRINT INFO
-# =========================================================
-
 print(
     f"Unique Stocks Loaded : "
     f"{df['Stock'].nunique()}"
 )
 
 print(
-    f"CPU Count : "
-    f"{CPU_COUNT}"
+    f"CPU Count : {CPU_COUNT}"
 )
 
 print(
-    f"Max Workers : "
-    f"{MAX_WORKERS}"
+    f"Max Workers : {MAX_WORKERS}"
 )
 
 sys.stdout.flush()
@@ -206,6 +193,7 @@ sys.stdout.flush()
 conn = get_connection()
 
 print("DuckDB Connected")
+
 sys.stdout.flush()
 
 # =========================================================
@@ -248,9 +236,8 @@ if PARTIAL_RESULTS_FILE.exists():
 
         processed_stocks = set(
 
-            partial_df[
-                "Stock"
-            ].astype(str)
+            partial_df["Stock"]
+            .astype(str)
         )
 
         df = df[
@@ -270,7 +257,7 @@ if PARTIAL_RESULTS_FILE.exists():
     except Exception as e:
 
         print(
-            f"Resume failed : {e}"
+            f"Resume Failed : {e}"
         )
 
         sys.stdout.flush()
@@ -312,28 +299,20 @@ def process_stock(row):
             row["Stock"]
         ).strip()
 
-        print(
-            f"Processing : {stock}"
-        )
-
-        sys.stdout.flush()
-
         # =================================================
-        # HUMAN DELAY
+        # LIGHT LOGGING
         # =================================================
 
-        time.sleep(
+        if random.randint(1, 100) == 1:
 
-            random.uniform(
-
-                REQUEST_DELAY_MIN,
-
-                REQUEST_DELAY_MAX
+            print(
+                f"Running : {stock}"
             )
-        )
+
+            sys.stdout.flush()
 
         # =================================================
-        # VALIDATE SYMBOL
+        # VALIDATE
         # =================================================
 
         validation = validate_symbol(
@@ -357,35 +336,53 @@ def process_stock(row):
         symbol = validation["symbol"]
 
         # =================================================
-        # TICKER
+        # FAST DOWNLOAD
         # =================================================
 
-        ticker = yf.Ticker(
-            symbol
+        hist = yf.download(
+
+            symbol,
+
+            period="1y",
+
+            interval="1d",
+
+            progress=False,
+
+            threads=False,
+
+            auto_adjust=True
         )
 
+        if hist.empty:
+
+            raise ValueError(
+                "NO_MARKET_DATA"
+            )
+
         # =================================================
-        # EXTRACTION
+        # EXTRACTORS
         # =================================================
 
         market_data = extract_market_data(
-            ticker
+            symbol,
+            hist
         )
 
         financial_data = extract_financials(
-            ticker
+            symbol
         )
 
         balance_data = extract_balance_sheet(
-            ticker
+            symbol
         )
 
         cashflow_data = extract_cashflow(
-            ticker
+            symbol
         )
 
         technical_data = calculate_indicators(
-            ticker
+            hist
         )
 
         sector_data = get_sector_data(
@@ -416,7 +413,7 @@ def process_stock(row):
             )
 
         # =================================================
-        # AI SCORES
+        # AI
         # =================================================
 
         ai_scores = calculate_institutional_score(
@@ -463,40 +460,6 @@ def process_stock(row):
 
     except Exception as e:
 
-        error_text = str(e)
-
-        print(
-            f"Yahoo Failure : "
-            f"{stock} | {error_text}"
-        )
-
-        sys.stdout.flush()
-
-        # =================================================
-        # YAHOO COOLDOWN
-        # =================================================
-
-        if (
-
-            "Too Many Requests" in error_text
-
-            or
-
-            "Rate limited" in error_text
-
-            or
-
-            "429" in error_text
-        ):
-
-            print(
-                "Yahoo cooldown triggered..."
-            )
-
-            sys.stdout.flush()
-
-            time.sleep(30)
-
         return {
 
             "status": "FAILED",
@@ -507,7 +470,7 @@ def process_stock(row):
 
                 "Reason": categorize_failure(e),
 
-                "Error": error_text
+                "Error": str(e)
             }
         }
 
@@ -557,7 +520,7 @@ for batch_num, batch_df in enumerate(
     print("=" * 60)
 
     print(
-        f"PROCESSING BATCH "
+        f"BATCH "
         f"{batch_num}/{total_batches}"
     )
 
@@ -569,15 +532,19 @@ for batch_num, batch_df in enumerate(
         max_workers=MAX_WORKERS
     ) as executor:
 
-        futures = [
+        rows = batch_df.to_dict(
+            orient="records"
+        )
+
+        futures = {
 
             executor.submit(
                 process_stock,
                 row
-            )
+            ): row
 
-            for _, row in batch_df.iterrows()
-        ]
+            for row in rows
+        }
 
         for future in as_completed(futures):
 
@@ -595,16 +562,18 @@ for batch_num, batch_df in enumerate(
 
                     success_count += 1
 
-                    print(
-                        f"SUCCESS : "
-                        f"{success_count}"
-                    )
+                    if success_count % 25 == 0:
 
-                    sys.stdout.flush()
+                        print(
+                            f"SUCCESS : "
+                            f"{success_count}"
+                        )
 
-                    # =====================================
+                        sys.stdout.flush()
+
+                    # =============================
                     # CHECKPOINT
-                    # =====================================
+                    # =============================
 
                     if (
 
@@ -615,40 +584,23 @@ for batch_num, batch_df in enumerate(
                         0
                     ):
 
-                        try:
+                        pd.DataFrame(
+                            results
+                        ).to_csv(
 
-                            pd.DataFrame(
-                                results
-                            ).to_csv(
+                            PARTIAL_RESULTS_FILE,
 
-                                PARTIAL_RESULTS_FILE,
+                            index=False
+                        )
 
-                                index=False
-                            )
+                        pd.DataFrame(
+                            failed
+                        ).to_csv(
 
-                            pd.DataFrame(
-                                failed
-                            ).to_csv(
+                            PARTIAL_FAILED_FILE,
 
-                                PARTIAL_FAILED_FILE,
-
-                                index=False
-                            )
-
-                            print(
-                                f"Checkpoint Saved : "
-                                f"{success_count}"
-                            )
-
-                            sys.stdout.flush()
-
-                        except Exception as e:
-
-                            print(
-                                f"Checkpoint Failed : {e}"
-                            )
-
-                            sys.stdout.flush()
+                            index=False
+                        )
 
                 else:
 
@@ -658,13 +610,6 @@ for batch_num, batch_df in enumerate(
 
                     failure_count += 1
 
-                    print(
-                        f"FAILED : "
-                        f"{failure_count}"
-                    )
-
-                    sys.stdout.flush()
-
             except TimeoutError:
 
                 failure_count += 1
@@ -673,16 +618,8 @@ for batch_num, batch_df in enumerate(
 
                     "Stock": "UNKNOWN",
 
-                    "Reason": "TIMEOUT",
-
-                    "Error": "Thread timeout"
+                    "Reason": "TIMEOUT"
                 })
-
-                print(
-                    "TIMEOUT OCCURRED"
-                )
-
-                sys.stdout.flush()
 
             except Exception as e:
 
@@ -697,22 +634,6 @@ for batch_num, batch_df in enumerate(
                     "Error": str(e)
                 })
 
-                print(
-                    f"THREAD ERROR : {e}"
-                )
-
-                sys.stdout.flush()
-
-    print(
-        f"Sleeping {BATCH_SLEEP} sec..."
-    )
-
-    sys.stdout.flush()
-
-    time.sleep(
-        BATCH_SLEEP
-    )
-
 # =========================================================
 # DATAFRAMES
 # =========================================================
@@ -726,7 +647,7 @@ failed_df = pd.DataFrame(
 )
 
 # =========================================================
-# SAVE CHECKPOINT
+# SAVE CHECKPOINTS
 # =========================================================
 
 results_df.to_csv(
@@ -744,7 +665,7 @@ failed_df.to_csv(
 )
 
 # =========================================================
-# FINAL DATAFRAME
+# FINAL DF
 # =========================================================
 
 final_df = (
@@ -758,22 +679,15 @@ final_df = (
     .reset_index(drop=True)
 )
 
-print(
-    f"Final Unique Stocks : "
-    f"{final_df['Stock'].nunique()}"
-)
+# =========================================================
+# FILL NULLS
+# =========================================================
 
-sys.stdout.flush()
+final_df = final_df.fillna(0)
 
 # =========================================================
 # ML MODEL
 # =========================================================
-
-print("=" * 60)
-print("TRAINING ML MODEL...")
-print("=" * 60)
-
-sys.stdout.flush()
 
 ml_model = None
 
@@ -786,13 +700,6 @@ if len(final_df) >= 100:
         ml_model, ml_accuracy = train_ml_model(
             final_df
         )
-
-        print(
-            f"ML Accuracy : "
-            f"{ml_accuracy}%"
-        )
-
-        sys.stdout.flush()
 
         if ml_model is not None:
 
@@ -809,82 +716,58 @@ if len(final_df) >= 100:
             f"ML Failed : {e}"
         )
 
-        sys.stdout.flush()
-
 # =========================================================
 # PORTFOLIO
 # =========================================================
 
-if final_df.empty:
+portfolio_df = pd.DataFrame()
 
-    portfolio_df = pd.DataFrame()
-
-else:
-
-    portfolio_df = build_portfolio(
-        final_df
-    )
-
-# =========================================================
-# BACKTEST
-# =========================================================
-
-print("=" * 60)
-print("RUNNING BACKTEST...")
-print("=" * 60)
-
-sys.stdout.flush()
-
-backtest_results = None
-
-if not portfolio_df.empty:
+if not final_df.empty:
 
     try:
 
-        backtest_results = run_backtest(
-            portfolio_df
+        portfolio_df = build_portfolio(
+            final_df
         )
 
     except Exception as e:
 
         print(
-            f"Backtest Failed : {e}"
+            f"Portfolio Failed : {e}"
         )
 
-        sys.stdout.flush()
-
-# =========================================================
-# CLEAN NULLS
-# =========================================================
-
-final_df = final_df.fillna(0)
-
 portfolio_df = portfolio_df.fillna(0)
+
+# =========================================================
+# BACKTEST
+# =========================================================
+
+try:
+
+    if not portfolio_df.empty:
+
+        run_backtest(
+            portfolio_df
+        )
+
+except Exception as e:
+
+    print(
+        f"Backtest Failed : {e}"
+    )
 
 # =========================================================
 # SAVE DATABASE
 # =========================================================
 
-print("=" * 60)
-print("SAVING TO DUCKDB...")
-print("=" * 60)
-
-sys.stdout.flush()
-
 try:
 
     conn.execute(
-        """
-        DROP TABLE IF EXISTS
-        enriched_stocks
-        """
+        "DROP TABLE IF EXISTS enriched_stocks"
     )
 
     conn.execute(
-        """
-        DROP TABLE IF EXISTS
-        institutional_portfolio
-        """
+        "DROP TABLE IF EXISTS institutional_portfolio"
     )
 
     conn.register(
@@ -894,11 +777,8 @@ try:
 
     conn.execute(
         """
-        CREATE TABLE
-        enriched_stocks AS
-
-        SELECT *
-        FROM final_df
+        CREATE TABLE enriched_stocks AS
+        SELECT * FROM final_df
         """
     )
 
@@ -909,11 +789,8 @@ try:
 
     conn.execute(
         """
-        CREATE TABLE
-        institutional_portfolio AS
-
-        SELECT *
-        FROM portfolio_df
+        CREATE TABLE institutional_portfolio AS
+        SELECT * FROM portfolio_df
         """
     )
 
@@ -923,17 +800,9 @@ except Exception as e:
         f"DuckDB Save Failed : {e}"
     )
 
-    sys.stdout.flush()
-
 # =========================================================
 # EXPORTS
 # =========================================================
-
-print("=" * 60)
-print("EXPORTING FILES...")
-print("=" * 60)
-
-sys.stdout.flush()
 
 sort_column = None
 
@@ -994,56 +863,14 @@ for filename, dataframe in csv_exports.items():
         )
 
         print(
-            f"CSV Exported : {filename}"
+            f"Exported : {filename}"
         )
-
-        sys.stdout.flush()
 
     except Exception as e:
 
         print(
-            f"CSV Export Failed : "
-            f"{filename} | {e}"
+            f"Export Failed : {filename} | {e}"
         )
-
-        sys.stdout.flush()
-
-# =========================================================
-# OPTIONAL XLSX
-# =========================================================
-
-ENABLE_XLSX = False
-
-if ENABLE_XLSX:
-
-    for filename, dataframe in csv_exports.items():
-
-        try:
-
-            dataframe.to_excel(
-
-                OUTPUT_DIR / filename.replace(
-                    ".csv",
-                    ".xlsx"
-                ),
-
-                index=False
-            )
-
-            print(
-                f"XLSX Exported : {filename}"
-            )
-
-            sys.stdout.flush()
-
-        except Exception as e:
-
-            print(
-                f"XLSX Export Failed : "
-                f"{filename} | {e}"
-            )
-
-            sys.stdout.flush()
 
 # =========================================================
 # CLEAN CHECKPOINTS
@@ -1059,22 +886,11 @@ try:
 
         PARTIAL_FAILED_FILE.unlink()
 
-    print(
-        "Checkpoint files cleaned."
-    )
-
-    sys.stdout.flush()
-
-except Exception as e:
-
-    print(
-        f"Checkpoint cleanup failed: {e}"
-    )
-
-    sys.stdout.flush()
+except:
+    pass
 
 # =========================================================
-# CLOSE DATABASE
+# CLOSE DB
 # =========================================================
 
 conn.close()
