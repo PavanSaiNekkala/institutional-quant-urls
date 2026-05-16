@@ -13,9 +13,14 @@ from datetime import datetime, timedelta
 # =========================================================
 
 @st.cache_data(ttl=1800)
+@st.cache_data(ttl=1800)
 def fetch_nifty_data():
 
-    symbols = ["^NSEI", "^BSESN"]
+    symbols = [
+        "^NSEI",
+        "^BSESN",
+        "RELIANCE.NS"
+    ]
 
     for symbol in symbols:
 
@@ -25,22 +30,26 @@ def fetch_nifty_data():
                 symbol,
                 period="1y",
                 interval="1d",
-                progress=False,
                 auto_adjust=True,
+                progress=False,
                 threads=False
             )
 
-            if df is not None and not df.empty:
+            if (
+                df is not None
+                and not df.empty
+                and "Close" in df.columns
+            ):
 
-                return df
+                close_series = df["Close"].dropna()
+
+                if len(close_series) > 220:
+                    return df
 
         except Exception as e:
-
             print(f"{symbol} failed: {e}")
 
     return pd.DataFrame()
-
-
 # =========================================================
 # MARKET REGIME
 # =========================================================
