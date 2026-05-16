@@ -507,33 +507,33 @@ try:
 
     avg_rsi = round(filtered_df["RSI"].mean(), 2)
 
-        # Bull Market
-        if avg_score >= 80 and avg_rsi >= 55:
-            market_regime = "BULLISH"
-            market_color = "#006400"
+# Bull Market
+if avg_score >= 80 and avg_rsi >= 55:
+        market_regime = "BULLISH"
+        market_color = "#006400"
 
-        # Recovery Market
-        elif avg_score >= 65:
-            market_regime = "RECOVERY"
-            market_color = "#00AA00"
+# Recovery Market
+ elif avg_score >= 65:
+        market_regime = "RECOVERY"
+        market_color = "#00AA00"
 
-        # Sideways
-        elif avg_score >= 50:
-            market_regime = "SIDEWAYS"
-            market_color = "#FF8C00"
+# Sideways
+elif avg_score >= 50:
+        market_regime = "SIDEWAYS"
+        market_color = "#FF8C00"
 
-        # Weak
-        elif avg_score >= 35:
-            market_regime = "WEAK"
-            market_color = "#1E90FF"
+# Weak
+elif avg_score >= 35:
+        market_regime = "WEAK"
+        market_color = "#1E90FF"
 
-        # Bear Market
-        else:
-            market_regime = "BEARISH"
-            market_color = "#FF4B4B"
+# Bear Market
+else:
+        market_regime = "BEARISH"
+        market_color = "#FF4B4B"
 
-    except Exception as e:
-        print("Market regime error:", e)
+except Exception as e:
+print("Market regime error:", e)
 
 # =========================================================
 # EMPTY FILTER SAFETY
