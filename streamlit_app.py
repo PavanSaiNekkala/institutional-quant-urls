@@ -594,8 +594,6 @@ else:
 
         ascending=False
 
-)
-
 st.dataframe(
 
         sector_leaders,
