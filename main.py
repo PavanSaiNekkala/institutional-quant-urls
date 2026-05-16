@@ -7,7 +7,7 @@ import sys
 import time
 import traceback
 from pathlib import Path
-from concurrent.futures import (
+from concurrent.futures import
     ThreadPoolExecutor,
     as_completed
 )
@@ -820,6 +820,139 @@ final_df = (
     .reset_index(drop=True)
 
 )
+# =========================================================
+# SECTOR RELATIVE STRENGTH ENGINE
+# =========================================================
+
+try:
+
+        # -----------------------------
+        # ENSURE SECTOR COLUMN EXISTS
+        # -----------------------------
+
+        if "Sector" not in final_df.columns:
+
+                final_df["Sector"] = "Unknown"
+
+        # -----------------------------
+        # ENSURE RETURN COLUMNS EXIST
+        # -----------------------------
+
+        required_return_cols = [
+                "1M Return",
+                "3M Return",
+                "6M Return"
+        ]
+
+        for col in required_return_cols:
+
+                if col not in final_df.columns:
+
+                        final_df[col] = 0
+
+        # -----------------------------
+        # SECTOR RANK
+        # -----------------------------
+
+        final_df["Sector Rank"] = (
+
+                final_df
+
+                .groupby("Sector")[
+                        "Institutional Score"
+                ]
+
+                .rank(
+                        ascending=False,
+                        method="dense"
+                )
+
+        )
+
+        # -----------------------------
+        # SECTOR PERCENTILE
+        # -----------------------------
+
+        final_df["Sector Percentile"] = (
+
+                final_df
+
+                .groupby("Sector")[
+                        "Institutional Score"
+                ]
+
+                .rank(
+                        pct=True
+                ) * 100
+
+        ).round(2)
+
+        # -----------------------------
+        # MARKET LEADER
+        # -----------------------------
+
+        final_df["Market Leader"] = np.where(
+
+                final_df["Sector Percentile"] >= 90,
+
+                "YES",
+
+                "NO"
+
+        )
+
+        # -----------------------------
+        # RELATIVE STRENGTH SCORE
+        # -----------------------------
+
+        final_df["Relative Strength Score"] = (
+
+                (
+                        final_df["1M Return"] * 0.3
+                        +
+                        final_df["3M Return"] * 0.3
+                        +
+                        final_df["6M Return"] * 0.4
+                )
+
+        ).round(2)
+
+        # -----------------------------
+        # ELITE STOCK
+        # -----------------------------
+
+        if "Trade Signal" not in final_df.columns:
+
+                final_df["Trade Signal"] = "WATCH"
+
+        final_df["Elite Stock"] = np.where(
+
+                (
+                        (final_df["Institutional Score"] >= 85)
+                        &
+                        (final_df["Relative Strength Score"] >= 15)
+                        &
+                        (
+                                final_df["Trade Signal"]
+                                == "STRONG BUY"
+                        )
+                ),
+
+                "YES",
+
+                "NO"
+
+        )
+
+        print(
+                "SECTOR ENGINE COMPLETED"
+        )
+
+except Exception as e:
+
+        print(
+                f"SECTOR ENGINE FAILED : {e}"
+        )
 # =========================================================
 # SECTOR RELATIVE STRENGTH
 # =========================================================
