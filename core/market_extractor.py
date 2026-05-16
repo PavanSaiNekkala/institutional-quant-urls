@@ -4,6 +4,8 @@
 
 import time
 import random
+import traceback
+
 import yfinance as yf
 
 from core.multi_source_market_engine import (
@@ -15,7 +17,7 @@ from utils.retry_engine import (
 )
 
 # =========================================================
-# SAFE FLOAT
+# SAFE FLOAT CONVERTER
 # =========================================================
 
 def safe_float(value):
@@ -25,15 +27,48 @@ def safe_float(value):
         if value is None:
             return 0.0
 
+        if value == "":
+            return 0.0
+
         return float(
+
             str(value)
             .replace(",", "")
+            .replace("%", "")
             .strip()
+
         )
 
     except:
 
         return 0.0
+
+
+# =========================================================
+# SAFE INT CONVERTER
+# =========================================================
+
+def safe_int(value):
+
+    try:
+
+        if value is None:
+            return 0
+
+        if value == "":
+            return 0
+
+        return int(float(
+
+            str(value)
+            .replace(",", "")
+            .strip()
+
+        ))
+
+    except:
+
+        return 0
 
 
 # =========================================================
@@ -45,7 +80,7 @@ def extract_market_data(ticker):
     try:
 
         # =================================================
-        # SYMBOL
+        # SYMBOL EXTRACTION
         # =================================================
 
         symbol = getattr(
@@ -58,7 +93,9 @@ def extract_market_data(ticker):
 
             return {}
 
-        symbol = str(symbol).strip().upper()
+        symbol = str(
+            symbol
+        ).strip().upper()
 
         # =================================================
         # NSE FORMAT
@@ -69,15 +106,20 @@ def extract_market_data(ticker):
             symbol = f"{symbol}.NS"
 
         # =================================================
-        # SMALL HUMAN DELAY
+        # LIGHT DELAY
         # =================================================
 
         time.sleep(
-            random.uniform(0.5, 1.5)
+
+            random.uniform(
+                0.3,
+                1.0
+            )
+
         )
 
         # =================================================
-        # FETCH MARKET DATA
+        # FETCH PRIMARY MARKET DATA
         # =================================================
 
         market_data = retry_request(
@@ -86,13 +128,13 @@ def extract_market_data(ticker):
                 symbol
             ),
 
-            retries=3,
-
+            retries=2,
             base_delay=2
+
         )
 
         # =================================================
-        # EMPTY SAFETY
+        # SAFETY
         # =================================================
 
         if market_data is None:
@@ -108,6 +150,8 @@ def extract_market_data(ticker):
 
         # =================================================
         # YFINANCE FALLBACK
+        # IMPORTANT:
+        # DO NOT USE SESSION=
         # =================================================
 
         fallback_price = 0
@@ -117,20 +161,19 @@ def extract_market_data(ticker):
         fallback_day_low = 0
         fallback_prev_close = 0
 
-        try:
+        fallback_open = 0
 
-            # =============================================
-            # IMPORTANT FIX:
-            # DO NOT PASS SESSION=
-            # =============================================
+        try:
 
             yf_ticker = yf.Ticker(symbol)
 
             fast_info = yf_ticker.fast_info
 
             fallback_price = safe_float(
+
                 fast_info.get(
                     "lastPrice",
+
                     fast_info.get(
                         "last_price",
                         0
@@ -138,9 +181,11 @@ def extract_market_data(ticker):
                 )
             )
 
-            fallback_volume = safe_float(
+            fallback_volume = safe_int(
+
                 fast_info.get(
                     "lastVolume",
+
                     fast_info.get(
                         "last_volume",
                         0
@@ -149,8 +194,10 @@ def extract_market_data(ticker):
             )
 
             fallback_market_cap = safe_float(
+
                 fast_info.get(
                     "marketCap",
+
                     fast_info.get(
                         "market_cap",
                         0
@@ -159,8 +206,10 @@ def extract_market_data(ticker):
             )
 
             fallback_day_high = safe_float(
+
                 fast_info.get(
                     "dayHigh",
+
                     fast_info.get(
                         "day_high",
                         0
@@ -169,8 +218,10 @@ def extract_market_data(ticker):
             )
 
             fallback_day_low = safe_float(
+
                 fast_info.get(
                     "dayLow",
+
                     fast_info.get(
                         "day_low",
                         0
@@ -179,8 +230,10 @@ def extract_market_data(ticker):
             )
 
             fallback_prev_close = safe_float(
+
                 fast_info.get(
                     "previousClose",
+
                     fast_info.get(
                         "previous_close",
                         0
@@ -188,19 +241,30 @@ def extract_market_data(ticker):
                 )
             )
 
+            fallback_open = safe_float(
+
+                fast_info.get(
+                    "open",
+                    0
+                )
+            )
+
         except Exception as yf_error:
 
             print(
-                f"YFinance Fallback Failed | "
+                f"YF fallback failed | "
                 f"{symbol} | "
-                f"{yf_error}"
+                f"{str(yf_error)}"
             )
 
         # =================================================
-        # SAFE MARKET DATA
+        # FINAL SAFE MARKET DATA
         # =================================================
 
         safe_market_data = {
+
+            "Symbol":
+            symbol,
 
             "Current Price":
 
@@ -212,23 +276,23 @@ def extract_market_data(ticker):
                 )
             ),
 
-            "Market Cap":
+            "Open":
 
             safe_float(
 
                 market_data.get(
-                    "Market Cap",
-                    fallback_market_cap
+                    "Open",
+                    fallback_open
                 )
             ),
 
-            "Volume":
+            "Previous Close":
 
             safe_float(
 
                 market_data.get(
-                    "Volume",
-                    fallback_volume
+                    "Previous Close",
+                    fallback_prev_close
                 )
             ),
 
@@ -252,13 +316,23 @@ def extract_market_data(ticker):
                 )
             ),
 
-            "Previous Close":
+            "Volume":
+
+            safe_int(
+
+                market_data.get(
+                    "Volume",
+                    fallback_volume
+                )
+            ),
+
+            "Market Cap":
 
             safe_float(
 
                 market_data.get(
-                    "Previous Close",
-                    fallback_prev_close
+                    "Market Cap",
+                    fallback_market_cap
                 )
             ),
 
@@ -333,6 +407,22 @@ def extract_market_data(ticker):
             )
         }
 
+        # =================================================
+        # REMOVE NAN VALUES
+        # =================================================
+
+        for key, value in safe_market_data.items():
+
+            try:
+
+                if value != value:
+
+                    safe_market_data[key] = 0
+
+            except:
+
+                safe_market_data[key] = 0
+
         return safe_market_data
 
     except Exception as e:
@@ -341,5 +431,7 @@ def extract_market_data(ticker):
             f"Market Extractor Failed | "
             f"{str(e)}"
         )
+
+        traceback.print_exc()
 
         return {}
