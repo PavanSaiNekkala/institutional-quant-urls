@@ -1,22 +1,13 @@
 # =========================================================
-# streamlit_app.py
-# FINAL PRODUCTION SAFE VERSION
+# STREAMLIT APP
 # =========================================================
 
 import warnings
 warnings.filterwarnings("ignore")
 
-# =========================================================
-# IMPORTS
-# =========================================================
-
 import streamlit as st
 import pandas as pd
 import numpy as np
-import duckdb
-import plotly.express as px
-import plotly.graph_objects as go
-
 from pathlib import Path
 
 # =========================================================
@@ -24,93 +15,41 @@ from pathlib import Path
 # =========================================================
 
 st.set_page_config(
+
     page_title="Institutional Quant Platform",
     page_icon="📈",
     layout="wide"
-)
 
-# =========================================================
-# CSS
-# =========================================================
-
-st.markdown(
-    """
-    <style>
-
-    .main {
-        background-color: #0E1117;
-    }
-
-    .stDataFrame {
-        border-radius: 10px;
-    }
-
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
-# =========================================================
-# TITLE
-# =========================================================
-
-st.title("📈 Institutional Quant Platform")
-
-st.caption(
-    "AI Powered Institutional Stock Analytics"
-)
-
-# =========================================================
-# DATABASE
-# =========================================================
-
-DATABASE_PATH = (
-    "database/institutional_quant.db"
 )
 
 # =========================================================
 # LOAD DATA
 # =========================================================
 
-@st.cache_data(ttl=1800)
+OUTPUT_FILE = Path(
+    "output/enriched_stock_data.xlsx"
+)
+
+# =========================================================
+# SAFE LOADER
+# =========================================================
+
+@st.cache_data(show_spinner=False)
+
 def load_data():
 
     try:
 
-        if not Path(DATABASE_PATH).exists():
+        if not OUTPUT_FILE.exists():
 
             return pd.DataFrame()
 
-        conn = duckdb.connect(
-            DATABASE_PATH,
-            read_only=True
+        df = pd.read_excel(
+            OUTPUT_FILE
         )
 
-        tables = conn.execute(
-            "SHOW TABLES"
-        ).fetchdf()
-
-        if tables.empty:
-
-            conn.close()
-
-            return pd.DataFrame()
-
-        table_name = tables.iloc[0, 0]
-
-        query = f"""
-        SELECT *
-        FROM {table_name}
-        """
-
-        df = conn.execute(
-            query
-        ).fetchdf()
-
-        conn.close()
-
         # =============================================
-        # STANDARDIZE COLUMN NAMES
+        # COLUMN CLEANING
         # =============================================
 
         df.columns = [
@@ -126,47 +65,91 @@ def load_data():
 
         required_columns = {
 
-            "Stock": "UNKNOWN",
-            "Sector": "Other",
+            "Stock": "",
+            "Sector": "Unknown",
+            "Trade Signal": "WATCH",
             "Institutional Score": 0,
-            "Confidence": 0,
             "Current Price": 0,
-            "Trade Signal": "HOLD"
+            "Confidence": 0
 
         }
 
-        for col, default_value in required_columns.items():
+        for col, default in required_columns.items():
 
             if col not in df.columns:
 
-                df[col] = default_value
+                df[col] = default
 
         # =============================================
-        # CLEAN SECTOR
+        # CLEAN NUMERIC COLUMNS
         # =============================================
 
-        df["Sector"] = (
+        numeric_cols = [
 
-            df["Sector"]
+            "Institutional Score",
+            "Current Price",
+            "Confidence"
 
-            .fillna("Other")
+        ]
+
+        for col in numeric_cols:
+
+            df[col] = pd.to_numeric(
+
+                df[col],
+                errors="coerce"
+
+            ).fillna(0)
+
+        # =============================================
+        # CLEAN TRADE SIGNALS
+        # =============================================
+
+        df["Trade Signal"] = (
+
+            df["Trade Signal"]
 
             .astype(str)
 
+            .str.upper()
+
+            .str.strip()
+
         )
+
+        # =============================================
+        # ALLOWED SIGNALS
+        # =============================================
+
+        allowed_signals = [
+
+            "STRONG BUY",
+            "BUY",
+            "WATCH",
+            "HOLD",
+            "AVOID"
+
+        ]
+
+        df.loc[
+            ~df["Trade Signal"].isin(
+                allowed_signals
+            ),
+            "Trade Signal"
+        ] = "WATCH"
 
         return df
 
     except Exception as e:
 
         st.error(
-            f"Database Load Failed : {e}"
+            f"Data Loading Error : {e}"
         )
 
         return pd.DataFrame()
 
 # =========================================================
-# LOAD DATAFRAME
+# LOAD
 # =========================================================
 
 df = load_data()
@@ -178,7 +161,7 @@ df = load_data()
 if df.empty:
 
     st.warning(
-        "No data available."
+        "No institutional data available."
     )
 
     st.stop()
@@ -199,46 +182,121 @@ search_stock = st.sidebar.text_input(
     "Search Stock"
 )
 
-if search_stock:
-
-    df = df[
-        df["Stock"]
-        .astype(str)
-        .str.contains(
-            search_stock,
-            case=False,
-            na=False
-        )
-    ]
-
 # =========================================================
 # TRADE SIGNAL FILTER
 # =========================================================
 
-trade_options = sorted(
+signal_order = [
 
-    df["Trade Signal"]
-    .astype(str)
-    .unique()
+    "STRONG BUY",
+    "BUY",
+    "WATCH",
+    "HOLD",
+    "AVOID"
 
-)
+]
 
 selected_trade_signal = st.sidebar.multiselect(
 
     "Trade Signal",
 
-    options=trade_options,
+    options=signal_order,
 
-    default=trade_options
+    default=[]
 
 )
 
-filtered_df = df[
+# =========================================================
+# SECTOR FILTER
+# =========================================================
 
-    df["Trade Signal"]
-    .isin(selected_trade_signal)
+all_sectors = sorted(
 
-]
+    df["Sector"]
+    .dropna()
+    .astype(str)
+    .unique()
+
+)
+
+selected_sectors = st.sidebar.multiselect(
+
+    "Sector",
+
+    options=all_sectors,
+
+    default=[]
+
+)
+
+# =========================================================
+# FILTERING
+# =========================================================
+
+filtered_df = df.copy()
+
+# =========================================================
+# SEARCH FILTER
+# =========================================================
+
+if search_stock:
+
+    filtered_df = filtered_df[
+
+        filtered_df["Stock"]
+
+        .astype(str)
+
+        .str.upper()
+
+        .str.contains(
+
+            search_stock.upper(),
+            na=False
+
+        )
+
+    ]
+
+# =========================================================
+# SIGNAL FILTER
+# =========================================================
+
+if len(selected_trade_signal) > 0:
+
+    filtered_df = filtered_df[
+
+        filtered_df["Trade Signal"]
+
+        .isin(selected_trade_signal)
+
+    ]
+
+# =========================================================
+# SECTOR FILTER
+# =========================================================
+
+if len(selected_sectors) > 0:
+
+    filtered_df = filtered_df[
+
+        filtered_df["Sector"]
+
+        .isin(selected_sectors)
+
+    ]
+
+# =========================================================
+# HEADER
+# =========================================================
+
+st.title(
+    "🏦 Institutional Quant Platform"
+)
+
+st.caption(
+    "AI Powered Institutional Stock Analytics"
+)
 
 # =========================================================
 # METRICS
@@ -256,6 +314,7 @@ with col1:
 with col2:
 
     st.metric(
+
         "Avg Institutional Score",
 
         round(
@@ -267,11 +326,13 @@ with col2:
             2
 
         )
+
     )
 
 with col3:
 
     st.metric(
+
         "Avg Confidence",
 
         round(
@@ -283,11 +344,13 @@ with col3:
             2
 
         )
+
     )
 
 with col4:
 
     st.metric(
+
         "Avg Price",
 
         round(
@@ -299,10 +362,11 @@ with col4:
             2
 
         )
+
     )
 
 # =========================================================
-# DATAFRAME
+# TABLE
 # =========================================================
 
 st.markdown("---")
@@ -311,185 +375,66 @@ st.subheader(
     "Institutional Stock Table"
 )
 
+display_columns = [
+
+    "Stock",
+    "Sector",
+    "Trade Signal",
+    "Institutional Score",
+    "Confidence",
+    "Current Price"
+
+]
+
+available_columns = [
+
+    col for col in display_columns
+    if col in filtered_df.columns
+
+]
+
 st.dataframe(
 
-    filtered_df,
+    filtered_df[
+        available_columns
+    ]
+
+    .sort_values(
+
+        by="Institutional Score",
+        ascending=False
+
+    ),
 
     use_container_width=True,
-
     height=700
 
 )
 
 # =========================================================
-# SECTOR SAFETY
-# =========================================================
-
-if "Sector" not in filtered_df.columns:
-
-    filtered_df["Sector"] = "Other"
-
-filtered_df["Sector"] = (
-
-    filtered_df["Sector"]
-
-    .fillna("Other")
-
-    .astype(str)
-
-)
-
-# =========================================================
-# HEATMAP
+# SIGNAL DISTRIBUTION
 # =========================================================
 
 st.markdown("---")
 
 st.subheader(
-    "Institutional Sector Heatmap"
+    "Trade Signal Distribution"
 )
 
-try:
+signal_counts = (
 
-    heatmap_df = (
-
-        filtered_df
-
-        .groupby("Sector", dropna=False)
-
-        .agg({
-
-            "Institutional Score": "mean",
-            "Confidence": "mean",
-            "Current Price": "mean",
-            "Stock": "count"
-
-        })
-
-        .reset_index()
-
-    )
-
-    heatmap_df.columns = [
-
-        "Sector",
-        "Avg Institutional Score",
-        "Avg Confidence",
-        "Avg Price",
-        "Stock Count"
-
+    filtered_df[
+        "Trade Signal"
     ]
 
-    heatmap_df["Capital Flow Score"] = (
+    .value_counts()
 
-        heatmap_df[
-            "Avg Institutional Score"
-        ]
+    .reindex(signal_order)
 
-        *
-
-        heatmap_df[
-            "Avg Confidence"
-        ]
-
-    )
-
-    fig_heatmap = px.treemap(
-
-        heatmap_df,
-
-        path=["Sector"],
-
-        values="Stock Count",
-
-        color="Capital Flow Score",
-
-        hover_data=[
-
-            "Avg Institutional Score",
-            "Avg Confidence",
-            "Avg Price"
-
-        ],
-
-        color_continuous_scale="RdYlGn"
-
-    )
-
-    fig_heatmap.update_layout(
-        height=700
-    )
-
-    st.plotly_chart(
-
-        fig_heatmap,
-
-        use_container_width=True
-
-    )
-
-except Exception as e:
-
-    st.error(
-        f"Heatmap Failed : {e}"
-    )
-
-# =========================================================
-# TOP STOCKS
-# =========================================================
-
-st.markdown("---")
-
-st.subheader(
-    "Top Institutional Picks"
-)
-
-top_df = (
-
-    filtered_df
-
-    .sort_values(
-
-        by="Institutional Score",
-
-        ascending=False
-
-    )
-
-    .head(25)
+    .fillna(0)
 
 )
 
-fig_bar = px.bar(
-
-    top_df,
-
-    x="Stock",
-
-    y="Institutional Score",
-
-    color="Confidence"
-
-)
-
-fig_bar.update_layout(
-    height=600
-)
-
-st.plotly_chart(
-
-    fig_bar,
-
-    use_container_width=True
-
-)
-
-# =========================================================
-# FOOTER
-# =========================================================
-
-st.markdown("---")
-
-st.success(
-    "Quant Engine Active"
+st.bar_chart(
+    signal_counts
 )
