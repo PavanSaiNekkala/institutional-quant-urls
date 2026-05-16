@@ -14,6 +14,9 @@ import numpy as np
 import pandas as pd
 import requests
 
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
 # =========================================================
 # BASE PATHS
 # =========================================================
@@ -183,23 +186,79 @@ for idx, row in stock_input_df.iterrows():
         print(f"PROCESSING : {stock}")
         print("=" * 60)
 
-        response = requests.get(
+        session = requests.Session()
+        retry_strategy = Retry(
 
-            quote_api,
+            total=3,
 
-            headers=HEADERS,
+            backoff_factor=1,
 
-            timeout=20
+            status_forcelist=[429, 500, 502, 503, 504],
+
+            allowed_methods=["GET"]
 
         )
 
-        if response.status_code != 200:
+        adapter = HTTPAdapter(
 
-            print(f"API FAILED : {stock}")
+            max_retries=retry_strategy
+        )
+
+        session.mount("https://", adapter)
+        session.mount("http://", adapter)
+
+        session.headers.update(HEADERS)
+        
+        try:
+
+            response = session.get(
+
+                quote_api,
+
+                timeout=30
+
+            )
+
+            if response.status_code != 200:
+
+                print(
+                    f"API FAILED : {stock} | "
+                    f"STATUS : {response.status_code}"
+                )
+
+                time.sleep(0.5)
+
+                continue
+
+            try:
+
+                quote_json = response.json()
+        
+            except Exception:
+
+                print(f"INVALID JSON : {stock}")
+
+                continue
+        
+        except requests.exceptions.Timeout:
+
+            print(f"TIMEOUT : {stock}")
 
             continue
 
-        quote_json = response.json()
+        except requests.exceptions.ConnectionError:
+
+            print(f"CONNECTION ERROR : {stock}")
+
+            continue
+
+        except Exception as e:
+
+            print(f"REQUEST FAILED : {stock}")
+
+            print(str(e))
+
+            continue
 
         quote_result = (
 
@@ -396,6 +455,7 @@ for idx, row in stock_input_df.iterrows():
         })
 
         print(f"SUCCESS : {stock}")
+        time.sleep(0.35)
 
     except Exception as e:
 
