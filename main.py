@@ -3,19 +3,14 @@
 # FINAL PRODUCTION MAIN.PY
 # =========================================================
 
-import os
 import time
-import json
 import traceback
 from pathlib import Path
 
 import duckdb
 import numpy as np
 import pandas as pd
-import requests
-
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+import yfinance as yf
 
 # =========================================================
 # BASE PATHS
@@ -47,24 +42,6 @@ conn = duckdb.connect(str(DB_PATH))
 INPUT_XLSX = INPUT_DIR / "yfinance_stock_urls.xlsx"
 
 # =========================================================
-# REQUEST HEADERS
-# =========================================================
-
-HEADERS = {
-
-    "User-Agent": (
-
-        "Mozilla/5.0 "
-        "(Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 "
-        "(KHTML, like Gecko) "
-        "Chrome/122.0 Safari/537.36"
-
-    )
-
-}
-
-# =========================================================
 # LOAD XLSX INPUT
 # =========================================================
 
@@ -78,7 +55,7 @@ def load_stock_input():
 
         if not INPUT_XLSX.exists():
 
-            print("INPUT FILE NOT FOUND")
+            print(f"INPUT FILE NOT FOUND : {INPUT_XLSX}")
 
             return pd.DataFrame()
 
@@ -91,14 +68,7 @@ def load_stock_input():
             return pd.DataFrame()
 
         required_columns = [
-
-            "Stock",
-            "QuoteAPI",
-            "ChartAPI",
-            "FinancialsAPI",
-            "InstitutionalHoldersAPI",
-            "RecommendationsAPI"
-
+            "Stock"
         ]
 
         missing_columns = [
@@ -176,160 +146,138 @@ print("=" * 60)
 
 for idx, row in stock_input_df.iterrows():
 
+    stock = row["Stock"]
+
     try:
-
-        stock = row["Stock"]
-
-        quote_api = row["QuoteAPI"]
 
         print("=" * 60)
         print(f"PROCESSING : {stock}")
         print("=" * 60)
 
-        session = requests.Session()
-        retry_strategy = Retry(
+        ticker = yf.Ticker(stock)
 
-            total=3,
+        info = ticker.info
 
-            backoff_factor=1,
-
-            status_forcelist=[429, 500, 502, 503, 504],
-
-            allowed_methods=["GET"]
-
+        hist = ticker.history(
+            period="6mo",
+            auto_adjust=True
         )
 
-        adapter = HTTPAdapter(
+        if hist.empty:
 
-            max_retries=retry_strategy
-        )
-
-        session.mount("https://", adapter)
-        session.mount("http://", adapter)
-
-        session.headers.update(HEADERS)
-        
-        try:
-
-            response = session.get(
-
-                quote_api,
-
-                timeout=30
-
-            )
-
-            if response.status_code != 200:
-
-                print(
-                    f"API FAILED : {stock} | "
-                    f"STATUS : {response.status_code}"
-                )
-
-                time.sleep(1)
-
-                continue
-
-            try:
-
-                quote_json = response.json()
-        
-            except Exception:
-
-                print(f"INVALID JSON : {stock}")
-
-                continue
-        
-        except requests.exceptions.Timeout:
-
-            print(f"TIMEOUT : {stock}")
+            print(f"NO HISTORY : {stock}")
 
             continue
 
-        except requests.exceptions.ConnectionError:
+        close_prices = hist["Close"]
 
-            print(f"CONNECTION ERROR : {stock}")
+        current_price = round(
 
-            continue
+            float(close_prices.iloc[-1]),
 
-        except Exception as e:
-
-            print(f"REQUEST FAILED : {stock}")
-
-            print(str(e))
-
-            continue
-
-        quote_result = (
-
-            quote_json
-
-            .get("quoteResponse", {})
-
-            .get("result", [])
+            2
 
         )
 
-        if not quote_result:
+        previous_close = round(
 
-            print(f"NO QUOTE DATA : {stock}")
+            float(close_prices.iloc[-2]),
 
-            continue
+            2
 
-        data = quote_result[0]
+        ) if len(close_prices) > 1 else current_price
 
-        current_price = data.get(
-            "regularMarketPrice",
+        returns_1m = (
+
+            (
+                close_prices.iloc[-1]
+                / close_prices.iloc[-22]
+            ) - 1
+
+            if len(close_prices) > 22
+
+            else 0
+
+        )
+
+        returns_3m = (
+
+            (
+                close_prices.iloc[-1]
+                / close_prices.iloc[-66]
+            ) - 1
+
+            if len(close_prices) > 66
+
+            else 0
+
+        )
+
+        returns_6m = (
+
+            (
+                close_prices.iloc[-1]
+                / close_prices.iloc[0]
+            ) - 1
+
+            if len(close_prices) > 1
+
+            else 0
+
+        )
+
+        volume = info.get(
+            "volume",
             0
         )
 
-        previous_close = data.get(
-            "regularMarketPreviousClose",
+        avg_volume = info.get(
+            "averageVolume",
             0
         )
 
-        open_price = data.get(
-            "regularMarketOpen",
-            0
-        )
-
-        day_high = data.get(
-            "regularMarketDayHigh",
-            0
-        )
-
-        day_low = data.get(
-            "regularMarketDayLow",
-            0
-        )
-
-        volume = data.get(
-            "regularMarketVolume",
-            0
-        )
-
-        market_cap = data.get(
+        market_cap = info.get(
             "marketCap",
             0
         )
 
-        change_percent = data.get(
-            "regularMarketChangePercent",
-            0
-        )
-
-        avg_volume = data.get(
-            "averageDailyVolume3Month",
-            0
-        )
-
-        pe_ratio = data.get(
+        pe_ratio = info.get(
             "trailingPE",
             0
         )
 
-        eps = data.get(
-            "epsTrailingTwelveMonths",
+        pb_ratio = info.get(
+            "priceToBook",
+            0
+        )
+
+        eps = info.get(
+            "trailingEps",
+            0
+        )
+
+        beta = info.get(
+            "beta",
+            0
+        )
+
+        roe = info.get(
+            "returnOnEquity",
+            0
+        )
+
+        sector = info.get(
+            "sector",
+            "Unknown"
+        )
+
+        industry = info.get(
+            "industry",
+            "Unknown"
+        )
+
+        dividend_yield = info.get(
+            "dividendYield",
             0
         )
 
@@ -339,15 +287,27 @@ for idx, row in stock_input_df.iterrows():
         # INSTITUTIONAL LOGIC
         # =================================================
 
-        if market_cap > 1_000_000_000:
+        if market_cap > 50_000_000_000:
+
+            institutional_score += 20
+
+        elif market_cap > 10_000_000_000:
+
+            institutional_score += 10
+
+        if volume > 1_000_000:
 
             institutional_score += 15
 
-        if volume > 500000:
+        elif volume > 250_000:
 
-            institutional_score += 15
+            institutional_score += 8
 
-        if change_percent > 2:
+        if returns_1m > 0.05:
+
+            institutional_score += 10
+
+        if returns_3m > 0.10:
 
             institutional_score += 10
 
@@ -355,7 +315,15 @@ for idx, row in stock_input_df.iterrows():
 
             institutional_score += 5
 
-        if eps > 0:
+        if pb_ratio > 0 and pb_ratio < 10:
+
+            institutional_score += 5
+
+        if roe and roe > 0.15:
+
+            institutional_score += 10
+
+        if eps and eps > 0:
 
             institutional_score += 5
 
@@ -365,23 +333,17 @@ for idx, row in stock_input_df.iterrows():
         )
 
         confidence = round(
-
             institutional_score * 0.93,
-
             2
-
         )
 
         buy_probability = round(
-
             confidence * 0.95,
-
             2
-
         )
 
         # =================================================
-        # TRADE SIGNALS
+        # TRADE SIGNAL
         # =================================================
 
         if confidence >= 85:
@@ -420,15 +382,13 @@ for idx, row in stock_input_df.iterrows():
 
             "Stock": stock,
 
+            "Sector": sector,
+
+            "Industry": industry,
+
             "Current Price": current_price,
 
             "Previous Close": previous_close,
-
-            "Open": open_price,
-
-            "Day High": day_high,
-
-            "Day Low": day_low,
 
             "Volume": volume,
 
@@ -438,9 +398,30 @@ for idx, row in stock_input_df.iterrows():
 
             "PE Ratio": pe_ratio,
 
+            "PB Ratio": pb_ratio,
+
             "EPS": eps,
 
-            "Change Percent": change_percent,
+            "ROE": roe,
+
+            "Beta": beta,
+
+            "Dividend Yield": dividend_yield,
+
+            "1M Return": round(
+                returns_1m * 100,
+                2
+            ),
+
+            "3M Return": round(
+                returns_3m * 100,
+                2
+            ),
+
+            "6M Return": round(
+                returns_6m * 100,
+                2
+            ),
 
             "Institutional Score": institutional_score,
 
@@ -455,7 +436,8 @@ for idx, row in stock_input_df.iterrows():
         })
 
         print(f"SUCCESS : {stock}")
-        time.sleep(0.35)
+
+        time.sleep(0.10)
 
     except Exception as e:
 
@@ -466,59 +448,13 @@ for idx, row in stock_input_df.iterrows():
         continue
 
 # =========================================================
-# CREATE FINAL DATAFRAME
+# CREATE DATAFRAME
 # =========================================================
 
-try:
-
-    final_df = pd.DataFrame(results)
-
-except Exception as e:
-
-    print(f"FINAL DF FAILED : {e}")
-
-    final_df = pd.DataFrame()
+final_df = pd.DataFrame(results)
 
 # =========================================================
-# FINAL DATA SAFETY
-# =========================================================
-
-if final_df is None:
-
-    final_df = pd.DataFrame()
-
-if not isinstance(final_df, pd.DataFrame):
-
-    final_df = pd.DataFrame()
-
-# =========================================================
-# ENSURE REQUIRED COLUMNS
-# =========================================================
-
-required_columns = [
-
-    "Stock",
-    "Trade Signal",
-    "Institutional Score",
-    "Confidence",
-    "Current Price"
-
-]
-
-for column in required_columns:
-
-    if column not in final_df.columns:
-
-        if column == "Trade Signal":
-
-            final_df[column] = "WATCH"
-
-        else:
-
-            final_df[column] = 0
-
-# =========================================================
-# HANDLE EMPTY DATAFRAME
+# EMPTY DATAFRAME SAFETY
 # =========================================================
 
 if final_df.empty:
@@ -527,119 +463,56 @@ if final_df.empty:
     print("NO VALID STOCK DATA GENERATED")
     print("=" * 60)
 
-    final_df = pd.DataFrame({
+    final_df = pd.DataFrame(columns=[
 
-        "Stock": [],
-        "Trade Signal": [],
-        "Institutional Score": [],
-        "Confidence": [],
-        "Current Price": []
+        "Stock",
+        "Trade Signal",
+        "Institutional Score",
+        "Confidence",
+        "Current Price"
 
-    })
+    ])
 
 # =========================================================
-# REMOVE DUPLICATES
+# CLEAN DATA
 # =========================================================
 
-if "Stock" in final_df.columns:
+final_df = (
 
-    final_df = (
+    final_df
 
-        final_df
+    .drop_duplicates(subset=["Stock"])
 
-        .drop_duplicates(
-            subset=["Stock"]
-        )
+    .fillna(0)
 
-        .reset_index(drop=True)
+    .reset_index(drop=True)
+
+)
+
+# =========================================================
+# SORTING
+# =========================================================
+
+if "Composite Score" in final_df.columns:
+
+    final_df = final_df.sort_values(
+
+        by="Composite Score",
+
+        ascending=False
 
     )
-
-# =========================================================
-# FILL MISSING VALUES
-# =========================================================
-
-final_df = final_df.fillna(0)
-
-# =========================================================
-# SAFE SORTING
-# =========================================================
-
-preferred_columns = [
-
-    "Composite Score",
-    "Institutional Score",
-    "Confidence",
-    "Buy Probability"
-
-]
-
-sort_column = None
-
-for column in preferred_columns:
-
-    if column in final_df.columns:
-
-        sort_column = column
-        break
-
-try:
-
-    if (
-
-        sort_column is not None
-        and not final_df.empty
-
-    ):
-
-        final_df = final_df.sort_values(
-
-            by=sort_column,
-
-            ascending=False
-
-        )
-
-except Exception as e:
-
-    print(f"SORT FAILED : {e}")
-
-# =========================================================
-# RESET INDEX
-# =========================================================
-
-final_df = final_df.reset_index(drop=True)
 
 # =========================================================
 # TOP PICKS
 # =========================================================
 
-try:
-
-    if not final_df.empty:
-
-        top_picks_df = final_df.head(100)
-
-    else:
-
-        top_picks_df = pd.DataFrame(
-            columns=final_df.columns
-        )
-
-except Exception as e:
-
-    print(f"TOP PICKS FAILED : {e}")
-
-    top_picks_df = pd.DataFrame()
-
-# =========================================================
-# PORTFOLIO
-# =========================================================
+top_picks_df = final_df.head(100)
 
 portfolio_df = top_picks_df.copy()
 
 # =========================================================
-# EXPORT CSV FILES
+# EXPORT CSV
 # =========================================================
 
 csv_exports = {
@@ -663,20 +536,7 @@ for filename, dataframe in csv_exports.items():
 
     try:
 
-        if dataframe is None:
-
-            dataframe = pd.DataFrame()
-
-        if not isinstance(
-            dataframe,
-            pd.DataFrame
-        ):
-
-            dataframe = pd.DataFrame()
-
-        export_path = (
-            OUTPUT_DIR / filename
-        )
+        export_path = OUTPUT_DIR / filename
 
         dataframe.to_csv(
 
@@ -690,24 +550,17 @@ for filename, dataframe in csv_exports.items():
 
     except Exception as e:
 
-        print(
-            f"EXPORT FAILED : "
-            f"{filename} | {e}"
-        )
+        print(f"EXPORT FAILED : {filename}")
+
+        print(str(e))
 
 # =========================================================
-# SAFE DUCKDB SAVE
+# SAVE DUCKDB
 # =========================================================
 
 try:
 
-    if (
-
-        not final_df.empty
-
-        and len(final_df.columns) > 0
-
-    ):
+    if not final_df.empty:
 
         conn.execute(
             "DROP TABLE IF EXISTS enriched_stocks"
@@ -727,17 +580,9 @@ try:
 
         print("DUCKDB SAVED")
 
-    else:
-
-        print(
-            "DUCKDB SKIPPED : EMPTY DATAFRAME"
-        )
-
 except Exception as e:
 
-    print(
-        f"DUCKDB SAVE FAILED : {e}"
-    )
+    print(f"DUCKDB SAVE FAILED : {e}")
 
 # =========================================================
 # SAVE PARQUET
@@ -746,8 +591,10 @@ except Exception as e:
 try:
 
     parquet_path = (
+
         OUTPUT_DIR /
         "institutional_quant.parquet"
+
     )
 
     final_df.to_parquet(
@@ -771,21 +618,19 @@ except Exception as e:
 print("=" * 60)
 
 print(
-    f"FINAL STOCK COUNT : "
-    f"{len(final_df)}"
+    f"FINAL STOCK COUNT : {len(final_df)}"
 )
 
 print(
-    f"TOP PICKS COUNT : "
-    f"{len(top_picks_df)}"
+    f"TOP PICKS COUNT : {len(top_picks_df)}"
 )
 
 print(
-    f"PORTFOLIO COUNT : "
-    f"{len(portfolio_df)}"
+    f"PORTFOLIO COUNT : {len(portfolio_df)}"
 )
 
 print("=" * 60)
 
 print("PIPELINE COMPLETED")
+
 print("=" * 60)
