@@ -241,65 +241,183 @@ filtered_df = df.copy()
 # SMART SIGNAL ENGINE
 # =========================================================
 
+# =========================================================
+# ADVANCED INSTITUTIONAL SIGNAL ENGINE
+# =========================================================
+
 def generate_trade_signal(row, market_regime):
 
     score = float(row.get("Institutional Score", 0))
     rsi = float(row.get("RSI", 50))
     confidence = float(row.get("Confidence", 50))
 
+    momentum_3m = float(row.get("3M Return", 0))
+    momentum_6m = float(row.get("6M Return", 0))
+
+    macd = float(row.get("MACD", 0))
+
     if pd.isna(rsi):
         rsi = 50
 
     # =====================================================
-    # BEAR MARKET
+    # BULL MARKET LOGIC
     # =====================================================
 
-    if market_regime == "BEAR MARKET":
+    if market_regime == "BULL MARKET":
+
+        # ================================================
+        # STRONG BUY
+        # ================================================
 
         if (
-            score >= 82
-            and rsi >= 40
-            and confidence >= 55
+            score >= 88
+            and confidence >= 75
+            and rsi >= 58
+            and momentum_3m > 8
+            and momentum_6m > 15
+            and macd > 0
+        ):
+            return "STRONG BUY"
+
+        # ================================================
+        # BUY
+        # ================================================
+
+        elif (
+            score >= 75
+            and confidence >= 60
+            and rsi >= 50
+            and momentum_3m > 3
         ):
             return "BUY"
 
-        elif score >= 65:
+        # ================================================
+        # WATCH
+        # ================================================
+
+        elif (
+            score >= 60
+            and confidence >= 50
+        ):
             return "WATCH"
 
+        # ================================================
+        # HOLD
+        # ================================================
+
         elif score >= 45:
+
             return "HOLD"
 
         else:
+
             return "AVOID"
 
     # =====================================================
-    # BULL MARKET
+    # BEAR MARKET LOGIC
+    # =====================================================
+
+    elif market_regime == "BEAR MARKET":
+
+        # ================================================
+        # VERY STRICT STRONG BUY
+        # ================================================
+
+        if (
+            score >= 92
+            and confidence >= 82
+            and rsi >= 55
+            and momentum_3m > 12
+            and momentum_6m > 20
+            and macd > 0
+        ):
+            return "STRONG BUY"
+
+        # ================================================
+        # BUY
+        # ================================================
+
+        elif (
+            score >= 82
+            and confidence >= 65
+            and rsi >= 45
+            and momentum_3m > 0
+        ):
+            return "BUY"
+
+        # ================================================
+        # WATCH
+        # ================================================
+
+        elif (
+            score >= 65
+            and confidence >= 55
+        ):
+            return "WATCH"
+
+        # ================================================
+        # HOLD
+        # ================================================
+
+        elif score >= 50:
+
+            return "HOLD"
+
+        else:
+
+            return "AVOID"
+
+    # =====================================================
+    # SIDEWAYS MARKET
     # =====================================================
 
     else:
 
+        # ================================================
+        # STRONG BUY
+        # ================================================
+
         if (
-            score >= 85
-            and rsi >= 52
-            and confidence >= 60
+            score >= 90
+            and confidence >= 72
+            and 50 <= rsi <= 68
+            and momentum_3m > 5
+            and macd > 0
         ):
             return "STRONG BUY"
 
+        # ================================================
+        # BUY
+        # ================================================
+
         elif (
-            score >= 72
-            and rsi >= 45
+            score >= 76
+            and confidence >= 60
+            and rsi >= 48
         ):
             return "BUY"
 
-        elif score >= 60:
+        # ================================================
+        # WATCH
+        # ================================================
+
+        elif (
+            score >= 60
+            and confidence >= 50
+        ):
             return "WATCH"
 
+        # ================================================
+        # HOLD
+        # ================================================
+
         elif score >= 45:
+
             return "HOLD"
 
         else:
-            return "AVOID"
 
+            return "AVOID"
 # =========================================================
 # APPLY SIGNAL ENGINE
 # =========================================================
