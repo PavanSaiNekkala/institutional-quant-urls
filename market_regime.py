@@ -1,160 +1,132 @@
-import pandas as pd
-import numpy as np
+# =========================================================
+# LIVE MARKET REGIME ENGINE
+# =========================================================
+
 import yfinance as yf
+import pandas as pd
 
-# =========================================================
-# RSI CALCULATION
-# =========================================================
 
-def calculate_rsi(series, period=14):
+def get_market_regime():
 
-        delta = series.diff()
+    try:
 
-        gain = delta.where(delta > 0, 0)
-        loss = -delta.where(delta < 0, 0)
+        # =========================================
+        # DOWNLOAD NIFTY DATA
+        # =========================================
 
-        avg_gain = gain.rolling(period).mean()
-        avg_loss = loss.rolling(period).mean()
+        nifty = yf.download(
+            "^NSEI",
+            period="1y",
+            interval="1d",
+            progress=False
+        )
+
+        # =========================================
+        # EMPTY SAFETY
+        # =========================================
+
+        if nifty.empty:
+
+            return (
+                "UNKNOWN",
+                "#808080",
+                {
+                    "NIFTY": "N/A",
+                    "SMA50": "N/A",
+                    "SMA200": "N/A",
+                    "RSI": "N/A"
+                }
+            )
+
+        # =========================================
+        # CLOSE PRICE
+        # =========================================
+
+        close = nifty["Close"]
+
+        # =========================================
+        # MOVING AVERAGES
+        # =========================================
+
+        sma50 = close.rolling(50).mean().iloc[-1]
+
+        sma200 = close.rolling(200).mean().iloc[-1]
+
+        latest = float(close.iloc[-1])
+
+        # =========================================
+        # RSI
+        # =========================================
+
+        delta = close.diff()
+
+        gain = delta.clip(lower=0)
+
+        loss = -delta.clip(upper=0)
+
+        avg_gain = gain.rolling(14).mean()
+
+        avg_loss = loss.rolling(14).mean()
 
         rs = avg_gain / avg_loss
 
         rsi = 100 - (100 / (1 + rs))
 
-        return rsi
+        latest_rsi = float(rsi.iloc[-1])
 
-# =========================================================
-# LIVE MARKET REGIME
-# =========================================================
+        # =========================================
+        # REGIME LOGIC
+        # =========================================
 
-def get_market_regime():
+        if latest > sma50 > sma200 and latest_rsi > 55:
 
-        try:
+            regime = "BULL MARKET"
+            color = "#006400"
 
-                # =========================================
-                # DOWNLOAD NIFTY DATA
-                # =========================================
+        elif latest > sma200:
 
-                nifty = yf.download(
+            regime = "SIDEWAYS MARKET"
+            color = "#FF8C00"
 
-                        "^NSEI",
+        else:
 
-                        period="1y",
+            regime = "BEAR MARKET"
+            color = "#8B0000"
 
-                        interval="1d",
+        # =========================================
+        # RETURN
+        # =========================================
 
-                        auto_adjust=True,
+        return (
 
-                        progress=False,
+            regime,
 
-                        threads=False
+            color,
 
-                )
+            {
+                "NIFTY": round(latest, 2),
+                "SMA50": round(float(sma50), 2),
+                "SMA200": round(float(sma200), 2),
+                "RSI": round(latest_rsi, 2)
+            }
 
-                if nifty.empty:
+        )
 
-                        return (
-                                "UNKNOWN",
-                                "#808080",
-                                {}
-                        )
+    except Exception as e:
 
-                # =========================================
-                # INDICATORS
-                # =========================================
+        print(f"Market regime failed: {e}")
 
-                nifty["SMA50"] = (
-                        nifty["Close"]
-                        .rolling(50)
-                        .mean()
-                )
+        return (
 
-                nifty["SMA200"] = (
-                        nifty["Close"]
-                        .rolling(200)
-                        .mean()
-                )
+            "UNKNOWN",
 
-                nifty["RSI"] = calculate_rsi(
-                        nifty["Close"]
-                )
+            "#808080",
 
-                # =========================================
-                # LATEST VALUES
-                # =========================================
+            {
+                "NIFTY": "N/A",
+                "SMA50": "N/A",
+                "SMA200": "N/A",
+                "RSI": "N/A"
+            }
 
-                latest_close = float(
-                        nifty["Close"].iloc[-1]
-                )
-
-                sma50 = float(
-                        nifty["SMA50"].iloc[-1]
-                )
-
-                sma200 = float(
-                        nifty["SMA200"].iloc[-1]
-                )
-
-                rsi = float(
-                        nifty["RSI"].iloc[-1]
-                )
-
-                # =========================================
-                # MARKET REGIME LOGIC
-                # =========================================
-
-                # STRONG BULL
-                if (
-                        latest_close > sma200
-                        and latest_close > sma50
-                        and rsi >= 60
-                ):
-
-                        regime = "STRONG BULL"
-                        color = "#006400"
-
-                # BULLISH
-                elif (
-                        latest_close > sma50
-                ):
-
-                        regime = "BULLISH"
-                        color = "#00AA00"
-
-                # SIDEWAYS
-                elif (
-                        latest_close > sma200
-                ):
-
-                        regime = "SIDEWAYS"
-                        color = "#FF8C00"
-
-                # BEARISH
-                else:
-
-                        regime = "BEARISH"
-                        color = "#FF0000"
-
-                # =========================================
-                # DETAILS
-                # =========================================
-
-                details = {
-                        "NIFTY": round(float(latest_close), 2),
-                        "SMA50": round(float(sma50), 2),
-                        "SMA200": round(float(sma200), 2),
-                        "RSI": round(float(rsi_value), 2)
-                }
-
-                return regime, color, details
-
-        except Exception as e:
-
-                print(
-                        f"Market regime failed: {e}"
-                )
-
-                return (
-                        "UNKNOWN",
-                        "#808080",
-                        {}
-                )
+        )
