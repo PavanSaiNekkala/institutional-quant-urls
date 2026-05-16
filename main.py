@@ -1,8 +1,10 @@
 # =========================================================
 # INSTITUTIONAL QUANT PLATFORM
-# FINAL FAST PARALLEL PRODUCTION MAIN.PY
+# FINAL PRODUCTION-GRADE MAIN.PY
 # =========================================================
 
+import sys
+import time
 import traceback
 from pathlib import Path
 from concurrent.futures import (
@@ -13,7 +15,11 @@ from concurrent.futures import (
 import duckdb
 import numpy as np
 import pandas as pd
+import requests
 import yfinance as yf
+
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # =========================================================
 # BASE PATHS
@@ -25,10 +31,12 @@ INPUT_DIR = BASE_DIR / "input"
 OUTPUT_DIR = BASE_DIR / "output"
 CACHE_DIR = BASE_DIR / "cache"
 DB_DIR = BASE_DIR / "database"
+LOG_DIR = BASE_DIR / "logs"
 
 OUTPUT_DIR.mkdir(exist_ok=True)
 CACHE_DIR.mkdir(exist_ok=True)
 DB_DIR.mkdir(exist_ok=True)
+LOG_DIR.mkdir(exist_ok=True)
 
 # =========================================================
 # DATABASE
@@ -36,13 +44,79 @@ DB_DIR.mkdir(exist_ok=True)
 
 DB_PATH = DB_DIR / "institutional_quant.db"
 
-conn = duckdb.connect(str(DB_PATH))
+conn = duckdb.connect(
+    str(DB_PATH),
+    read_only=False
+)
 
 # =========================================================
 # INPUT FILE
 # =========================================================
 
-INPUT_XLSX = INPUT_DIR / "yfinance_stock_urls.xlsx"
+INPUT_XLSX = (
+    INPUT_DIR /
+    "yfinance_stock_urls.xlsx"
+)
+
+# =========================================================
+# REQUEST SESSION
+# =========================================================
+
+HEADERS = {
+
+    "User-Agent": (
+
+        "Mozilla/5.0 "
+        "(Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 "
+        "(KHTML, like Gecko) "
+        "Chrome/120.0 Safari/537.36"
+
+    )
+
+}
+
+def create_session():
+
+    session = requests.Session()
+
+    retries = Retry(
+
+        total=3,
+
+        backoff_factor=1,
+
+        status_forcelist=[
+            429,
+            500,
+            502,
+            503,
+            504
+        ]
+
+    )
+
+    adapter = HTTPAdapter(
+        max_retries=retries
+    )
+
+    session.mount(
+        "https://",
+        adapter
+    )
+
+    session.mount(
+        "http://",
+        adapter
+    )
+
+    session.headers.update(
+        HEADERS
+    )
+
+    return session
+
+SESSION = create_session()
 
 # =========================================================
 # LOAD XLSX INPUT
@@ -58,11 +132,16 @@ def load_stock_input():
 
         if not INPUT_XLSX.exists():
 
-            print(f"INPUT FILE NOT FOUND : {INPUT_XLSX}")
+            print(
+                f"INPUT FILE NOT FOUND : "
+                f"{INPUT_XLSX}"
+            )
 
             return pd.DataFrame()
 
-        df = pd.read_excel(INPUT_XLSX)
+        df = pd.read_excel(
+            INPUT_XLSX
+        )
 
         if df.empty:
 
@@ -70,20 +149,32 @@ def load_stock_input():
 
             return pd.DataFrame()
 
+        df.columns = [
+            c.strip()
+            for c in df.columns
+        ]
+
         required_columns = [
             "Stock"
         ]
 
         missing_columns = [
 
-            col for col in required_columns
+            col
+
+            for col
+            in required_columns
+
             if col not in df.columns
 
         ]
 
         if missing_columns:
 
-            print(f"MISSING COLUMNS : {missing_columns}")
+            print(
+                f"MISSING COLUMNS : "
+                f"{missing_columns}"
+            )
 
             return pd.DataFrame()
 
@@ -103,19 +194,28 @@ def load_stock_input():
 
             df
 
-            .drop_duplicates(subset=["Stock"])
+            .dropna(subset=["Stock"])
+
+            .drop_duplicates(
+                subset=["Stock"]
+            )
 
             .reset_index(drop=True)
 
         )
 
-        print(f"TOTAL STOCKS LOADED : {len(df)}")
+        print(
+            f"TOTAL STOCKS LOADED : "
+            f"{len(df)}"
+        )
 
         return df
 
     except Exception as e:
 
-        print(f"XLSX LOAD FAILED : {e}")
+        print(
+            f"XLSX LOAD FAILED : {e}"
+        )
 
         traceback.print_exc()
 
@@ -137,6 +237,34 @@ if stock_input_df.empty:
     print("NO STOCK INPUT AVAILABLE")
     print("=" * 60)
 
+    sys.exit(0)
+
+# =========================================================
+# TRADE SIGNAL CLASSIFIER
+# =========================================================
+
+def classify_signal(confidence):
+
+    if confidence >= 85:
+
+        return "STRONG BUY"
+
+    elif confidence >= 75:
+
+        return "BUY"
+
+    elif confidence >= 65:
+
+        return "WATCH"
+
+    elif confidence >= 50:
+
+        return "HOLD"
+
+    else:
+
+        return "AVOID"
+
 # =========================================================
 # PROCESS SINGLE STOCK
 # =========================================================
@@ -151,7 +279,12 @@ def process_stock(row):
         print(f"PROCESSING : {stock}")
         print("=" * 60)
 
-        ticker = yf.Ticker(stock)
+        time.sleep(0.15)
+
+        ticker = yf.Ticker(
+            stock,
+            session=SESSION
+        )
 
         # =================================================
         # FAST INFO
@@ -161,7 +294,7 @@ def process_stock(row):
 
             info = ticker.fast_info
 
-        except:
+        except Exception:
 
             info = {}
 
@@ -169,19 +302,49 @@ def process_stock(row):
         # HISTORY
         # =================================================
 
-        hist = ticker.history(
-            period="6mo",
-            auto_adjust=True,
-            timeout=15
-        )
+        try:
+
+            hist = ticker.history(
+
+                period="6mo",
+
+                auto_adjust=True,
+
+                timeout=20
+
+            )
+
+        except Exception:
+
+            print(
+                f"HISTORY FAILED : "
+                f"{stock}"
+            )
+
+            return None
 
         if hist.empty:
 
-            print(f"NO HISTORY : {stock}")
+            print(
+                f"NO HISTORY : {stock}"
+            )
 
             return None
 
         close_prices = hist["Close"]
+
+        if close_prices.empty:
+
+            print(
+                f"EMPTY CLOSE DATA : "
+                f"{stock}"
+            )
+
+            return None
+
+        # =================================================
+        # PRICE METRICS
+        # =================================================
 
         current_price = round(
             float(close_prices.iloc[-1]),
@@ -189,36 +352,62 @@ def process_stock(row):
         )
 
         previous_close = round(
+
             float(close_prices.iloc[-2]),
+
             2
+
         ) if len(close_prices) > 1 else current_price
 
+        # =================================================
+        # RETURNS
+        # =================================================
+
         returns_1m = (
+
             (
                 close_prices.iloc[-1]
-                / close_prices.iloc[-22]
+                /
+                close_prices.iloc[-22]
             ) - 1
+
             if len(close_prices) > 22
+
             else 0
+
         )
 
         returns_3m = (
+
             (
                 close_prices.iloc[-1]
-                / close_prices.iloc[-66]
+                /
+                close_prices.iloc[-66]
             ) - 1
+
             if len(close_prices) > 66
+
             else 0
+
         )
 
         returns_6m = (
+
             (
                 close_prices.iloc[-1]
-                / close_prices.iloc[0]
+                /
+                close_prices.iloc[0]
             ) - 1
+
             if len(close_prices) > 1
+
             else 0
+
         )
+
+        # =================================================
+        # INFO METRICS
+        # =================================================
 
         volume = info.get(
             "lastVolume",
@@ -285,6 +474,10 @@ def process_stock(row):
             100
         )
 
+        # =================================================
+        # CONFIDENCE
+        # =================================================
+
         confidence = round(
             institutional_score * 0.93,
             2
@@ -295,70 +488,70 @@ def process_stock(row):
             2
         )
 
-        # =================================================
-        # TRADE SIGNAL
-        # =================================================
-
-        if confidence >= 85:
-
-            trade_signal = "STRONG BUY"
-
-        elif confidence >= 75:
-
-            trade_signal = "BUY"
-
-        elif confidence >= 65:
-
-            trade_signal = "WATCH"
-
-        elif confidence >= 50:
-
-            trade_signal = "HOLD"
-
-        else:
-
-            trade_signal = "AVOID"
+        trade_signal = classify_signal(
+            confidence
+        )
 
         composite_score = round(
+
             (
                 institutional_score
-                + confidence
-                + buy_probability
+                +
+                confidence
+                +
+                buy_probability
             ) / 3,
+
             2
+
         )
+
+        # =================================================
+        # RESULT
+        # =================================================
 
         result = {
 
             "Stock": stock,
 
-            "Current Price": current_price,
+            "Current Price":
+            current_price,
 
-            "Previous Close": previous_close,
+            "Previous Close":
+            previous_close,
 
-            "Volume": volume,
+            "Volume":
+            volume,
 
-            "Market Cap": market_cap,
+            "Market Cap":
+            market_cap,
 
-            "Day High": day_high,
+            "Day High":
+            day_high,
 
-            "Day Low": day_low,
+            "Day Low":
+            day_low,
 
-            "52W High": year_high,
+            "52W High":
+            year_high,
 
-            "52W Low": year_low,
+            "52W Low":
+            year_low,
 
-            "1M Return": round(
+            "1M Return":
+            round(
                 returns_1m * 100,
                 2
             ),
 
-            "3M Return": round(
+            "3M Return":
+            round(
                 returns_3m * 100,
                 2
             ),
 
-            "6M Return": round(
+            "6M Return":
+            round(
                 returns_6m * 100,
                 2
             ),
@@ -387,6 +580,7 @@ def process_stock(row):
     except Exception as e:
 
         print(f"FAILED : {stock}")
+
         print(str(e))
 
         return None
@@ -397,11 +591,17 @@ def process_stock(row):
 
 results = []
 
+success_count = 0
+failed_count = 0
+
 print("=" * 60)
 print("STARTING FAST PARALLEL PIPELINE")
 print("=" * 60)
 
-MAX_WORKERS = 15
+MAX_WORKERS = min(
+    25,
+    len(stock_input_df)
+)
 
 with ThreadPoolExecutor(
     max_workers=MAX_WORKERS
@@ -429,9 +629,19 @@ with ThreadPoolExecutor(
 
                 results.append(result)
 
+                success_count += 1
+
+            else:
+
+                failed_count += 1
+
         except Exception as e:
 
-            print(f"THREAD ERROR : {e}")
+            failed_count += 1
+
+            print(
+                f"THREAD ERROR : {e}"
+            )
 
 # =========================================================
 # CREATE DATAFRAME
@@ -449,15 +659,7 @@ if final_df.empty:
     print("NO VALID STOCK DATA GENERATED")
     print("=" * 60)
 
-    final_df = pd.DataFrame(columns=[
-
-        "Stock",
-        "Trade Signal",
-        "Institutional Score",
-        "Confidence",
-        "Current Price"
-
-    ])
+    sys.exit(0)
 
 # =========================================================
 # CLEAN DATA
@@ -467,7 +669,9 @@ final_df = (
 
     final_df
 
-    .drop_duplicates(subset=["Stock"])
+    .drop_duplicates(
+        subset=["Stock"]
+    )
 
     .fillna(0)
 
@@ -522,7 +726,10 @@ for filename, dataframe in csv_exports.items():
 
     try:
 
-        export_path = OUTPUT_DIR / filename
+        export_path = (
+            OUTPUT_DIR /
+            filename
+        )
 
         dataframe.to_csv(
 
@@ -532,11 +739,17 @@ for filename, dataframe in csv_exports.items():
 
         )
 
-        print(f"EXPORTED : {filename}")
+        print(
+            f"EXPORTED : "
+            f"{filename}"
+        )
 
     except Exception as e:
 
-        print(f"EXPORT FAILED : {filename}")
+        print(
+            f"EXPORT FAILED : "
+            f"{filename}"
+        )
 
         print(str(e))
 
@@ -546,29 +759,32 @@ for filename, dataframe in csv_exports.items():
 
 try:
 
-    if not final_df.empty:
+    conn.execute(
+        """
+        DROP TABLE IF EXISTS
+        enriched_stocks
+        """
+    )
 
-        conn.execute(
-            "DROP TABLE IF EXISTS enriched_stocks"
-        )
+    conn.register(
+        "final_df",
+        final_df
+    )
 
-        conn.register(
-            "final_df",
-            final_df
-        )
+    conn.execute(
+        """
+        CREATE TABLE enriched_stocks AS
+        SELECT * FROM final_df
+        """
+    )
 
-        conn.execute(
-            """
-            CREATE TABLE enriched_stocks AS
-            SELECT * FROM final_df
-            """
-        )
-
-        print("DUCKDB SAVED")
+    print("DUCKDB SAVED")
 
 except Exception as e:
 
-    print(f"DUCKDB SAVE FAILED : {e}")
+    print(
+        f"DUCKDB SAVE FAILED : {e}"
+    )
 
 # =========================================================
 # SAVE PARQUET
@@ -595,7 +811,38 @@ try:
 
 except Exception as e:
 
-    print(f"PARQUET FAILED : {e}")
+    print(
+        f"PARQUET FAILED : {e}"
+    )
+
+# =========================================================
+# SAVE EXCEL
+# =========================================================
+
+try:
+
+    excel_path = (
+
+        OUTPUT_DIR /
+        "institutional_quant.xlsx"
+
+    )
+
+    final_df.to_excel(
+
+        excel_path,
+
+        index=False
+
+    )
+
+    print("EXCEL SAVED")
+
+except Exception as e:
+
+    print(
+        f"EXCEL FAILED : {e}"
+    )
 
 # =========================================================
 # FINAL SUMMARY
@@ -604,15 +851,36 @@ except Exception as e:
 print("=" * 60)
 
 print(
-    f"FINAL STOCK COUNT : {len(final_df)}"
+    f"FINAL STOCK COUNT : "
+    f"{len(final_df)}"
 )
 
 print(
-    f"TOP PICKS COUNT : {len(top_picks_df)}"
+    f"TOP PICKS COUNT : "
+    f"{len(top_picks_df)}"
 )
 
 print(
-    f"PORTFOLIO COUNT : {len(portfolio_df)}"
+    f"PORTFOLIO COUNT : "
+    f"{len(portfolio_df)}"
+)
+
+print(
+    f"SUCCESS COUNT : "
+    f"{success_count}"
+)
+
+print(
+    f"FAILED COUNT : "
+    f"{failed_count}"
+)
+
+print(
+
+    f"SUCCESS RATE : "
+
+    f"{round((success_count / max(len(stock_input_df),1))*100,2)}%"
+
 )
 
 print("=" * 60)
@@ -620,3 +888,5 @@ print("=" * 60)
 print("PIPELINE COMPLETED")
 
 print("=" * 60)
+
+conn.close()
