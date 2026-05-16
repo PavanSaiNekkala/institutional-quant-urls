@@ -2,16 +2,8 @@ name: Institutional Data Pipeline
 
 on:
 
-  # =======================================================
-  # DAILY SCHEDULE
-  # =======================================================
-
   schedule:
     - cron: "30 2 * * *"
-
-  # =======================================================
-  # MANUAL RUN
-  # =======================================================
 
   workflow_dispatch:
 
@@ -26,14 +18,14 @@ concurrency:
   cancel-in-progress: true
 
 # =========================================================
-# REQUIRED FOR PUSHING GENERATED FILES
+# REQUIRED PERMISSIONS
 # =========================================================
 
 permissions:
   contents: write
 
 # =========================================================
-# GLOBAL ENVIRONMENT VARIABLES
+# ENV VARIABLES
 # =========================================================
 
 env:
@@ -63,7 +55,7 @@ jobs:
     steps:
 
       # ===================================================
-      # CHECKOUT REPOSITORY
+      # CHECKOUT
       # ===================================================
 
       - name: Checkout Repository
@@ -73,8 +65,6 @@ jobs:
         with:
 
           fetch-depth: 0
-
-          persist-credentials: true
 
       # ===================================================
       # SETUP PYTHON
@@ -98,15 +88,14 @@ jobs:
 
         run: |
 
-          echo "======================================"
+          echo "=================================="
           echo "SYSTEM INFORMATION"
-          echo "======================================"
+          echo "=================================="
 
           python --version
-
           pip --version
 
-          echo "CPU CORES:"
+          echo "CPU:"
           nproc
 
           echo "MEMORY:"
@@ -125,7 +114,7 @@ jobs:
           pip install -r requirements.txt
 
       # ===================================================
-      # CREATE REQUIRED DIRECTORIES
+      # CREATE DIRECTORIES
       # ===================================================
 
       - name: Create Required Directories
@@ -137,19 +126,14 @@ jobs:
           mkdir -p logs
           mkdir -p cache
           mkdir -p failed
-          mkdir -p backups
 
       # ===================================================
-      # CLEAN OLD GENERATED FILES
+      # CLEAN GENERATED FILES
       # ===================================================
 
-      - name: Remove Old Generated Files
+      - name: Clean Old Generated Files
 
         run: |
-
-          echo "======================================"
-          echo "CLEANING OLD FILES"
-          echo "======================================"
 
           rm -f output/*.csv || true
           rm -f output/*.xlsx || true
@@ -159,16 +143,16 @@ jobs:
           rm -f database/*.duckdb || true
 
       # ===================================================
-      # RUN MAIN PIPELINE
+      # RUN PIPELINE
       # ===================================================
 
       - name: Run Institutional Pipeline
 
         run: |
 
-          echo "======================================"
-          echo "STARTING INSTITUTIONAL PIPELINE"
-          echo "======================================"
+          echo "=================================="
+          echo "STARTING PIPELINE"
+          echo "=================================="
 
           python main.py
 
@@ -180,23 +164,17 @@ jobs:
 
         run: |
 
-          echo "======================================"
+          echo "=================================="
           echo "OUTPUT FILES"
-          echo "======================================"
+          echo "=================================="
 
           ls -lh output || true
 
-          echo "======================================"
+          echo "=================================="
           echo "DATABASE FILES"
-          echo "======================================"
+          echo "=================================="
 
           ls -lh database || true
-
-          echo "======================================"
-          echo "LOG FILES"
-          echo "======================================"
-
-          ls -lh logs || true
 
       # ===================================================
       # UPLOAD CSV ARTIFACTS
@@ -252,16 +230,12 @@ jobs:
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       # ===================================================
-      # STAGE GENERATED FILES
+      # STAGE FILES
       # ===================================================
 
       - name: Stage Generated Files
 
         run: |
-
-          echo "======================================"
-          echo "STAGING GENERATED FILES"
-          echo "======================================"
 
           git add -f output/*.csv || true
           git add -f output/*.xlsx || true
@@ -269,14 +243,8 @@ jobs:
           git add -f database/*.db || true
           git add -f database/*.duckdb || true
 
-          echo "======================================"
-          echo "GIT STATUS"
-          echo "======================================"
-
-          git status
-
       # ===================================================
-      # COMMIT GENERATED FILES
+      # COMMIT FILES
       # ===================================================
 
       - name: Commit Generated Files
@@ -286,7 +254,7 @@ jobs:
           git diff --cached --quiet && echo "No changes detected" || git commit -m "Automated institutional pipeline update"
 
       # ===================================================
-      # PUSH CHANGES
+      # PUSH
       # ===================================================
 
       - name: Push Changes
@@ -305,12 +273,12 @@ jobs:
 
         run: |
 
-          echo "======================================"
+          echo "=================================="
           echo "PIPELINE COMPLETED SUCCESSFULLY"
-          echo "======================================"
+          echo "=================================="
 
       # ===================================================
-      # FAILURE DIAGNOSTICS
+      # FAILURE DEBUGGING
       # ===================================================
 
       - name: Failure Diagnostics
@@ -319,24 +287,15 @@ jobs:
 
         run: |
 
-          echo "======================================"
+          echo "=================================="
           echo "PIPELINE FAILED"
-          echo "======================================"
+          echo "=================================="
 
-          echo "======================================"
-          echo "OUTPUT DIRECTORY"
-          echo "======================================"
-
+          echo "OUTPUT:"
           ls -R output || true
 
-          echo "======================================"
-          echo "DATABASE DIRECTORY"
-          echo "======================================"
-
+          echo "DATABASE:"
           ls -R database || true
 
-          echo "======================================"
-          echo "LOG DIRECTORY"
-          echo "======================================"
-
+          echo "LOGS:"
           ls -R logs || true
