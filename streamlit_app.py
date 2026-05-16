@@ -259,7 +259,7 @@ signal_order = [
         "AVOID"
 
 ]
-signal_color_map = {
+signal_colors = {
     "STRONG BUY": "#006400",   # dark green
     "BUY": "#00AA00",          # green
     "WATCH": "#FF8C00",        # orange
