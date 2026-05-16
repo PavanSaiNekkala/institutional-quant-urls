@@ -20,7 +20,9 @@ import yfinance as yf
 
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-
+from ta.momentum import RSIIndicator
+from ta.trend import SMAIndicator, MACD
+from ta.volatility import AverageTrueRange
 # =========================================================
 # BASE PATHS
 # =========================================================
@@ -332,6 +334,34 @@ def process_stock(row):
             return None
 
         close_prices = hist["Close"]
+        # =========================================================
+        # TECHNICAL INDICATORS
+        # =========================================================
+
+        rsi = RSIIndicator(
+            close_prices,
+            window=14
+        ).rsi().iloc[-1]
+
+        sma_20 = SMAIndicator(
+            close_prices,
+            window=20
+        ).sma_indicator().iloc[-1]
+
+        sma_50 = SMAIndicator(
+            close_prices,
+            window=50
+        ).sma_indicator().iloc[-1]
+
+        macd = MACD(
+            close_prices
+        ).macd().iloc[-1]
+
+        atr = AverageTrueRange(
+            high=hist["High"],
+            low=hist["Low"],
+            close=hist["Close"]
+        ).average_true_range().iloc[-1]
 
         if close_prices.empty:
 
@@ -439,27 +469,47 @@ def process_stock(row):
             0
         )
 
-        # =================================================
-        # INSTITUTIONAL SCORE
-        # =================================================
+        # =========================================================
+        # MULTI FACTOR SCORING
+        # =========================================================
 
-        institutional_score = 50
+        institutional_score = 0
 
-        if market_cap > 50_000_000_000:
+        # ---------------------------------------------------------
+        # MARKET CAP
+        # ---------------------------------------------------------
 
-            institutional_score += 20
+        if market_cap > 500_000_000_000:
+
+            institutional_score += 25
+
+        elif market_cap > 100_000_000_000:
+
+            institutional_score += 18
 
         elif market_cap > 10_000_000_000:
 
             institutional_score += 10
 
-        if volume > 1_000_000:
+        # ---------------------------------------------------------
+        # LIQUIDITY
+        # ---------------------------------------------------------
+
+        if volume > 5_000_000:
+
+            institutional_score += 20
+
+        elif volume > 1_000_000:
 
             institutional_score += 15
-
+        
         elif volume > 250_000:
 
             institutional_score += 8
+
+        # ---------------------------------------------------------
+        # MOMENTUM
+        # ---------------------------------------------------------
 
         if returns_1m > 0.05:
 
@@ -469,9 +519,57 @@ def process_stock(row):
 
             institutional_score += 10
 
-        institutional_score = min(
-            institutional_score,
-            100
+        if returns_6m > 0.20:
+
+            institutional_score += 10
+
+        # ---------------------------------------------------------
+        # RSI
+        # ---------------------------------------------------------
+
+        if 45 <= rsi <= 70:
+
+            institutional_score += 10
+
+        elif rsi > 80:
+
+            institutional_score -= 5
+
+        # ---------------------------------------------------------
+        # TREND STRENGTH
+        # ---------------------------------------------------------
+
+        if current_price > sma_20:
+
+            institutional_score += 5
+        
+        if current_price > sma_50:
+
+            institutional_score += 5
+
+        # ---------------------------------------------------------
+        # MACD
+        # ---------------------------------------------------------
+
+        if macd > 0:
+
+            institutional_score += 5
+
+        # ---------------------------------------------------------
+        # VOLATILITY
+        # ---------------------------------------------------------
+
+        if atr < current_price * 0.04:
+
+            institutional_score += 5
+
+        # ---------------------------------------------------------
+        # LIMIT SCORE
+        # ---------------------------------------------------------
+
+        institutional_score = max(
+            0,
+            min(institutional_score, 100)
         )
 
         # =================================================
@@ -479,8 +577,15 @@ def process_stock(row):
         # =================================================
 
         confidence = round(
-            institutional_score * 0.93,
+
+            (
+                institutional_score
+                * 0.95
+            ),
+
             2
+
+        
         )
 
         buy_probability = round(
@@ -512,67 +617,104 @@ def process_stock(row):
 
         result = {
 
-            "Stock": stock,
+                "Stock": stock,
 
-            "Current Price":
-            current_price,
+                "Current Price":
+                current_price,
 
-            "Previous Close":
-            previous_close,
+                "Previous Close":
+                previous_close,
 
-            "Volume":
-            volume,
+                "Volume":
+                volume,
 
-            "Market Cap":
-            market_cap,
+                "Market Cap":
+                market_cap,
 
-            "Day High":
-            day_high,
+                "Day High":
+                day_high,
 
-            "Day Low":
-            day_low,
+                "Day Low":
+                day_low,
 
-            "52W High":
-            year_high,
+                "52W High":
+                year_high,
 
-            "52W Low":
-            year_low,
+                "52W Low":
+                year_low,
 
-            "1M Return":
-            round(
-                returns_1m * 100,
-                2
-            ),
+                "1M Return":
+                round(
+                        returns_1m * 100,
+                        2
+                ),
 
-            "3M Return":
-            round(
-                returns_3m * 100,
-                2
-            ),
+                "3M Return":
+                round(
+                        returns_3m * 100,
+                        2
+                ),
 
-            "6M Return":
-            round(
-                returns_6m * 100,
-                2
-            ),
+                "6M Return":
+                round(
+                        returns_6m * 100,
+                        2
+                ),
 
-            "Institutional Score":
-            institutional_score,
+                # =====================================================
+                # TECHNICAL INDICATORS
+                # =====================================================
 
-            "Confidence":
-            confidence,
+                "RSI":
+                round(
+                        rsi,
+                        2
+                ),
 
-            "Buy Probability":
-            buy_probability,
+                "SMA20":
+                round(
+                        sma_20,
+                        2
+                ),
 
-            "Composite Score":
-            composite_score,
+                "SMA50":
+                round(
+                        sma_50,
+                        2
+                ),
 
-            "Trade Signal":
-            trade_signal
+                "MACD":
+                round(
+                        macd,
+                        2
+                ),
+
+                "ATR":
+                round(
+                        atr,
+                        2
+                ),
+
+                # =====================================================
+                # SCORING
+                # =====================================================
+
+                "Institutional Score":
+                institutional_score,
+
+                "Confidence":
+                confidence,
+
+                "Buy Probability":
+                buy_probability,
+
+                "Composite Score":
+                composite_score,
+
+                "Trade Signal":
+                trade_signal
 
         }
-
         print(f"SUCCESS : {stock}")
 
         return result
