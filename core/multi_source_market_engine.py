@@ -2,6 +2,7 @@
 # IMPORTS
 # =========================================================
 
+import time
 import requests
 import yfinance as yf
 
@@ -49,6 +50,7 @@ def safe_float(value):
 
         return 0
 
+
 # =========================================================
 # SAFE INT
 # =========================================================
@@ -67,6 +69,7 @@ def safe_int(value):
 
         return 0
 
+
 # =========================================================
 # YAHOO FINANCE
 # =========================================================
@@ -74,6 +77,16 @@ def safe_int(value):
 def fetch_yfinance(symbol):
 
     try:
+
+        # =============================================
+        # RATE LIMIT PROTECTION
+        # =============================================
+
+        time.sleep(0.25)
+
+        # =============================================
+        # YFINANCE
+        # =============================================
 
         ticker = yf.Ticker(symbol)
 
@@ -113,9 +126,9 @@ def fetch_yfinance(symbol):
             "NSE"
         )
 
-        # =================================================
+        # =============================================
         # VALIDITY CHECK
-        # =================================================
+        # =============================================
 
         if current_price <= 0:
 
@@ -151,6 +164,7 @@ def fetch_yfinance(symbol):
 
         return None
 
+
 # =========================================================
 # ALPHA VANTAGE
 # =========================================================
@@ -158,6 +172,8 @@ def fetch_yfinance(symbol):
 def fetch_alpha_vantage(symbol):
 
     try:
+
+        time.sleep(0.2)
 
         url = (
 
@@ -176,7 +192,7 @@ def fetch_alpha_vantage(symbol):
 
             headers=HEADERS,
 
-            timeout=10
+            timeout=15
         )
 
         data = response.json()
@@ -231,6 +247,7 @@ def fetch_alpha_vantage(symbol):
 
         return None
 
+
 # =========================================================
 # FINNHUB
 # =========================================================
@@ -238,6 +255,8 @@ def fetch_alpha_vantage(symbol):
 def fetch_finnhub(symbol):
 
     try:
+
+        time.sleep(0.2)
 
         url = (
 
@@ -254,7 +273,7 @@ def fetch_finnhub(symbol):
 
             headers=HEADERS,
 
-            timeout=10
+            timeout=15
         )
 
         data = response.json()
@@ -301,6 +320,7 @@ def fetch_finnhub(symbol):
 
         return None
 
+
 # =========================================================
 # TWELVE DATA
 # =========================================================
@@ -308,6 +328,8 @@ def fetch_finnhub(symbol):
 def fetch_twelvedata(symbol):
 
     try:
+
+        time.sleep(0.2)
 
         url = (
 
@@ -324,7 +346,7 @@ def fetch_twelvedata(symbol):
 
             headers=HEADERS,
 
-            timeout=10
+            timeout=15
         )
 
         data = response.json()
@@ -356,6 +378,7 @@ def fetch_twelvedata(symbol):
 
         return None
 
+
 # =========================================================
 # NSE FALLBACK
 # =========================================================
@@ -363,6 +386,8 @@ def fetch_twelvedata(symbol):
 def fetch_nse(symbol):
 
     try:
+
+        time.sleep(0.3)
 
         clean_symbol = symbol.replace(
             ".NS",
@@ -375,26 +400,13 @@ def fetch_nse(symbol):
             f"quote-equity?symbol={clean_symbol}"
         )
 
-        session = requests.Session()
-
-        session.headers.update(
-            HEADERS
-        )
-
-        # =================================================
-        # NSE COOKIE INIT
-        # =================================================
-
-        session.get(
-            "https://www.nseindia.com",
-            timeout=10
-        )
-
-        response = session.get(
+        response = requests.get(
 
             url,
 
-            timeout=10
+            headers=HEADERS,
+
+            timeout=15
         )
 
         data = response.json()
@@ -418,24 +430,17 @@ def fetch_nse(symbol):
             )
         )
 
+        intra = price_info.get(
+            "intraDayHighLow",
+            {}
+        )
+
         day_high = safe_float(
-            price_info.get(
-                "intraDayHighLow",
-                {}
-            ).get(
-                "max",
-                0
-            )
+            intra.get("max", 0)
         )
 
         day_low = safe_float(
-            price_info.get(
-                "intraDayHighLow",
-                {}
-            ).get(
-                "min",
-                0
-            )
+            intra.get("min", 0)
         )
 
         if current_price <= 0:
@@ -464,6 +469,7 @@ def fetch_nse(symbol):
 
         return None
 
+
 # =========================================================
 # MASTER FETCHER
 # =========================================================
@@ -474,9 +480,7 @@ def fetch_market_data(symbol):
     # YAHOO FIRST
     # =====================================================
 
-    yahoo_data = fetch_yfinance(
-        symbol
-    )
+    yahoo_data = fetch_yfinance(symbol)
 
     if yahoo_data is not None:
 
@@ -486,9 +490,7 @@ def fetch_market_data(symbol):
     # NSE SECOND
     # =====================================================
 
-    nse_data = fetch_nse(
-        symbol
-    )
+    nse_data = fetch_nse(symbol)
 
     if nse_data is not None:
 
@@ -498,9 +500,7 @@ def fetch_market_data(symbol):
     # ALPHA VANTAGE
     # =====================================================
 
-    alpha_data = fetch_alpha_vantage(
-        symbol
-    )
+    alpha_data = fetch_alpha_vantage(symbol)
 
     if alpha_data is not None:
 
@@ -510,9 +510,7 @@ def fetch_market_data(symbol):
     # FINNHUB
     # =====================================================
 
-    finnhub_data = fetch_finnhub(
-        symbol
-    )
+    finnhub_data = fetch_finnhub(symbol)
 
     if finnhub_data is not None:
 
@@ -522,9 +520,7 @@ def fetch_market_data(symbol):
     # TWELVE DATA
     # =====================================================
 
-    twelvedata_data = fetch_twelvedata(
-        symbol
-    )
+    twelvedata_data = fetch_twelvedata(symbol)
 
     if twelvedata_data is not None:
 
