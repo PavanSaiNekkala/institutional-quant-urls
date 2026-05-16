@@ -1,63 +1,92 @@
 # =========================================================
-# LIVE MARKET REGIME ENGINE
+# market_regime.py
 # =========================================================
 
 import yfinance as yf
 import pandas as pd
+import numpy as np
 import streamlit as st
+from datetime import datetime, timedelta
 
+# =========================================================
+# CACHE
+# =========================================================
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=1800)
 def fetch_nifty_data():
 
-    return yf.download(
-        "^NSEI",
-        period="1y",
-        interval="1d",
-        progress=False,
-        auto_adjust=True
-    )
+    symbols = ["^NSEI", "^BSESN"]
 
+    for symbol in symbols:
+
+        try:
+
+            df = yf.download(
+                symbol,
+                period="1y",
+                interval="1d",
+                progress=False,
+                auto_adjust=True,
+                threads=False
+            )
+
+            if df is not None and not df.empty:
+
+                return df
+
+        except Exception as e:
+
+            print(f"{symbol} failed: {e}")
+
+    return pd.DataFrame()
+
+
+# =========================================================
+# MARKET REGIME
+# =========================================================
 
 def get_market_regime():
 
     try:
 
-        nifty = fetch_nifty_data()
+        df = fetch_nifty_data()
 
-        # =========================================
-        # SAFETY
-        # =========================================
+        # =================================================
+        # FALLBACK IF DATA FAILS
+        # =================================================
 
-        if nifty.empty:
+        if df.empty:
 
-            raise Exception("Empty NIFTY data")
+            return (
+                "SIDEWAYS MARKET",
+                "#808080",
+                {
+                    "NIFTY": "N/A",
+                    "SMA50": "N/A",
+                    "SMA200": "N/A",
+                    "RSI": "N/A"
+                }
+            )
 
-        # =========================================
-        # CLOSE
-        # =========================================
+        # =================================================
+        # PRICE
+        # =================================================
 
-        close = nifty["Close"]
+        close = float(df["Close"].iloc[-1])
 
-        # Handle dataframe/series issue
-        if isinstance(close, pd.DataFrame):
-            close = close.iloc[:, 0]
+        # =================================================
+        # MOVING AVERAGES
+        # =================================================
 
-        # =========================================
-        # SMA
-        # =========================================
+        sma50 = float(df["Close"].rolling(50).mean().iloc[-1])
 
-        sma50 = close.rolling(50).mean().iloc[-1]
+        sma200 = float(df["Close"].rolling(200).mean().iloc[-1])
 
-        sma200 = close.rolling(200).mean().iloc[-1]
-
-        latest = float(close.iloc[-1])
-
-        # =========================================
+        # =================================================
         # RSI
-        # =========================================
+        # =================================================
 
-        delta = close.diff()
+        delta = df["Close"].diff()
 
         gain = delta.clip(lower=0)
 
@@ -71,57 +100,64 @@ def get_market_regime():
 
         rsi = 100 - (100 / (1 + rs))
 
-        latest_rsi = float(rsi.iloc[-1])
+        rsi = float(rsi.iloc[-1])
 
-        # =========================================
-        # REGIME
-        # =========================================
+        # =================================================
+        # BULL MARKET
+        # =================================================
 
-        if latest > sma50 > sma200 and latest_rsi > 55:
+        if close > sma50 > sma200 and rsi >= 60:
 
             regime = "BULL MARKET"
-            color = "#006400"
 
-        elif latest > sma200:
+            color = "#008000"
 
-            regime = "SIDEWAYS MARKET"
-            color = "#FF8C00"
+        # =================================================
+        # BEAR MARKET
+        # =================================================
+
+        elif close < sma50 < sma200 and rsi < 45:
+
+            regime = "BEAR MARKET"
+
+            color = "#CC0000"
+
+        # =================================================
+        # SIDEWAYS MARKET
+        # =================================================
 
         else:
 
-            regime = "BEAR MARKET"
-            color = "#8B0000"
+            regime = "SIDEWAYS MARKET"
 
-        return (
+            color = "#808080"
 
-            regime,
+        # =================================================
+        # RETURN
+        # =================================================
 
-            color,
+        details = {
 
-            {
-                "NIFTY": round(latest, 2),
-                "SMA50": round(float(sma50), 2),
-                "SMA200": round(float(sma200), 2),
-                "RSI": round(latest_rsi, 2)
-            }
+            "NIFTY": round(close, 2),
+            "SMA50": round(sma50, 2),
+            "SMA200": round(sma200, 2),
+            "RSI": round(rsi, 2)
 
-        )
+        }
+
+        return regime, color, details
 
     except Exception as e:
 
         print(f"Market regime failed: {e}")
 
         return (
-
-            "DATA UNAVAILABLE",
-
+            "SIDEWAYS MARKET",
             "#808080",
-
             {
                 "NIFTY": "N/A",
                 "SMA50": "N/A",
                 "SMA200": "N/A",
                 "RSI": "N/A"
             }
-
         )
