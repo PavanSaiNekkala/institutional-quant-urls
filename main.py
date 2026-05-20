@@ -316,7 +316,21 @@ def process_stock(row):
             low=hist["Low"],
             close=hist["Close"]
         ).average_true_range().iloc[-1]
+        
+        if pd.isna(rsi):
+            rsi = 50
 
+        if pd.isna(sma_20):
+            sma_20 = current_price
+
+        if pd.isna(sma_50):
+            sma_50 = current_price
+
+        if pd.isna(macd):
+            macd = 0
+
+        if pd.isna(atr):
+            atr = current_price * 0.02        
         if close_prices.empty:
 
             print(
@@ -432,6 +446,9 @@ def process_stock(row):
         # ---------------------------------------------------------
         # MARKET CAP
         # ---------------------------------------------------------
+
+        market_cap = market_cap or 0
+        volume = volume or 0
 
         if market_cap > 500_000_000_000:
 
