@@ -33,7 +33,7 @@ BASE_DIR = Path(__file__).resolve().parent
 
 OUTPUT_DIR = BASE_DIR / "output"
 
-CSV_FILE = OUTPUT_DIR / "enriched_stock_data.csv"
+CSV_FILE = OUTPUT_DIR / "enriched_stock_data.csv.gz"
 
 XLSX_FILE = OUTPUT_DIR / "institutional_quant.xlsx"
 
@@ -42,33 +42,86 @@ XLSX_FILE = OUTPUT_DIR / "institutional_quant.xlsx"
 # =========================================================
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def load_data():
+
+def load_data(data_file):
 
     try:
 
-        if CSV_FILE.exists():
+        suffix = str(data_file).lower()
 
-            df = pd.read_csv(CSV_FILE)
+        # =====================================================
+        # CSV
+        # =====================================================
 
-        elif XLSX_FILE.exists():
+        if suffix.endswith(".csv"):
 
-            df = pd.read_excel(XLSX_FILE)
+            try:
+
+                df = pd.read_csv(
+                    data_file,
+                    encoding="utf-8"
+                )
+
+            except UnicodeDecodeError:
+
+                df = pd.read_csv(
+                    data_file,
+                    encoding="latin1"
+                )
+
+        # =====================================================
+        # GZIP CSV
+        # =====================================================
+
+        elif suffix.endswith(".gz"):
+
+            df = pd.read_csv(
+                data_file,
+                compression="gzip"
+            )
+
+        # =====================================================
+        # PARQUET
+        # =====================================================
+
+        elif suffix.endswith(".parquet"):
+
+            df = pd.read_parquet(data_file)
+
+        # =====================================================
+        # EXCEL
+        # =====================================================
+
+        elif (
+            suffix.endswith(".xlsx")
+            or
+            suffix.endswith(".xls")
+        ):
+
+            df = pd.read_excel(data_file)
+
+        # =====================================================
+        # UNKNOWN
+        # =====================================================
 
         else:
 
-            return pd.DataFrame()
-
-        if df.empty:
+            st.error(
+                f"Unsupported file format : {data_file}"
+            )
 
             return pd.DataFrame()
 
         # =====================================================
-        # CLEAN COLUMNS
+        # CLEAN COLUMN NAMES
         # =====================================================
 
         df.columns = [
+
             str(col).strip()
+
             for col in df.columns
+
         ]
 
         # =====================================================
@@ -134,10 +187,15 @@ def load_data():
         # =====================================================
 
         df["Trade Signal"] = (
+
             df["Trade Signal"]
+
             .astype(str)
+
             .str.upper()
+
             .str.strip()
+
         )
 
         return df
@@ -152,7 +210,7 @@ def load_data():
 # LOAD DATA
 # =========================================================
 
-df = load_data()
+df = load_data(CSV_FILE)
 
 if df.empty:
 
@@ -182,11 +240,11 @@ signal_order = [
 
 signal_colors = {
 
-    "STRONG BUY": "#00FF66",
+    "STRONG BUY": "#006400",
     "BUY": "#00AA00",
-    "WATCH": "#FFB000",
-    "HOLD": "#3399FF",
-    "AVOID": "#FF3333"
+    "WATCH": "#FF8C00",
+    "HOLD": "#1E90FF",
+    "AVOID": "#FF0000"
 
 }
 
@@ -268,13 +326,13 @@ def generate_trade_signal(row, market_regime):
     except:
         volume_score = 50
 
-    regime = str(market_regime).lower()
+    regime_lower = str(market_regime).lower()
 
     # =====================================================
     # REGIME ADAPTIVE THRESHOLDS
     # =====================================================
 
-    if "bull" in regime:
+    if "bull" in regime_lower:
 
         strong_buy_score = 85
         strong_buy_conf = 70
@@ -282,7 +340,7 @@ def generate_trade_signal(row, market_regime):
 
         buy_score = 70
 
-    elif "bear" in regime:
+    elif "bear" in regime_lower:
 
         strong_buy_score = 95
         strong_buy_conf = 88
@@ -290,7 +348,7 @@ def generate_trade_signal(row, market_regime):
 
         buy_score = 82
 
-    elif "sideways" in regime:
+    elif "sideways" in regime_lower:
 
         strong_buy_score = 90
         strong_buy_conf = 75
@@ -346,6 +404,7 @@ def generate_trade_signal(row, market_regime):
     else:
 
         return "WATCH"
+
 # =========================================================
 # APPLY SIGNAL ENGINE
 # =========================================================
@@ -478,12 +537,6 @@ avg_rsi = round(
     2
 )
 
-st.caption(
-    f"""
-    Strong Buy Criteria dynamically adapts to
-    {regime.lower()} conditions.
-    """
-)
 # =========================================================
 # METRIC CARDS
 # =========================================================
@@ -532,193 +585,4 @@ signal_chart = px.pie(
 st.plotly_chart(
     signal_chart,
     width="stretch"
-)
-
-# =========================================================
-# TOP PICKS
-# =========================================================
-
-st.markdown("---")
-
-st.subheader("🔥 Top Institutional Picks")
-
-top_picks = filtered_df.sort_values(
-    by="Composite Score",
-    ascending=False
-).head(25)
-
-st.dataframe(
-    top_picks,
-    width="stretch",
-    height=500
-)
-
-# =========================================================
-# HEATMAP
-# =========================================================
-
-st.markdown("---")
-
-st.subheader("🔥 Sector Strength Heatmap")
-
-sector_strength = (
-
-    filtered_df
-    .groupby("Sector")["Institutional Score"]
-    .mean()
-    .reset_index()
-
-)
-
-heatmap = px.treemap(
-    sector_strength,
-    path=["Sector"],
-    values="Institutional Score",
-    color="Institutional Score"
-)
-
-st.plotly_chart(
-    heatmap,
-    width="stretch"
-)
-
-# =========================================================
-# RSI ANALYSIS
-# =========================================================
-
-st.markdown("---")
-
-st.subheader("RSI Heatmap")
-
-rsi_chart = px.scatter(
-
-    filtered_df,
-
-    x="RSI",
-    y="Institutional Score",
-
-    color="Trade Signal",
-
-    color_discrete_map=signal_colors,
-
-    hover_data=["Stock"]
-
-)
-
-st.plotly_chart(
-    rsi_chart,
-    width="stretch"
-)
-
-# =========================================================
-# MOMENTUM ANALYSIS
-# =========================================================
-
-st.markdown("---")
-
-st.subheader("Momentum Analysis")
-
-momentum_chart = px.scatter(
-
-    filtered_df,
-
-    x="3M Return",
-    y="6M Return",
-
-    color="Trade Signal",
-
-    color_discrete_map=signal_colors,
-
-    hover_data=["Stock"]
-
-)
-
-st.plotly_chart(
-    momentum_chart,
-    width="stretch"
-)
-
-# =========================================================
-# MAIN TABLE
-# =========================================================
-
-st.markdown("---")
-
-st.subheader("📊 Institutional Stock Table")
-
-display_columns = [
-
-    "Stock",
-    "Sector",
-    "Trade Signal",
-    "Institutional Score",
-    "Confidence",
-    "Composite Score",
-    "Current Price",
-    "RSI",
-    "SMA20",
-    "SMA50",
-    "MACD",
-    "ATR",
-    "1M Return",
-    "3M Return",
-    "6M Return"
-
-]
-
-available_columns = [
-
-    col
-    for col in display_columns
-    if col in filtered_df.columns
-
-]
-
-def highlight_signal(val):
-
-    colors = {
-
-        "STRONG BUY": "background-color: #006400; color: white;",
-        "BUY": "background-color: #00AA00; color: white;",
-        "WATCH": "background-color: #FF8C00; color: white;",
-        "HOLD": "background-color: #1E90FF; color: white;",
-        "AVOID": "background-color: #FF0000; color: white;"
-
-    }
-
-    return colors.get(val, "")
-
-styled_df = filtered_df[
-    available_columns
-].sort_values(
-    by="Composite Score",
-    ascending=False
-).style.map(
-    highlight_signal,
-    subset=["Trade Signal"]
-)
-
-st.dataframe(
-    styled_df,
-    width="stretch",
-    height=800
-)
-
-# =========================================================
-# DOWNLOAD
-# =========================================================
-
-st.markdown("---")
-
-st.subheader("Download Institutional Data")
-
-csv = filtered_df.to_csv(
-    index=False
-).encode("utf-8")
-
-st.download_button(
-    "Download CSV",
-    csv,
-    "institutional_quant_data.csv",
-    "text/csv"
 )
