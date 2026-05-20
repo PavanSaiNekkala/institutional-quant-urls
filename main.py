@@ -6,6 +6,7 @@
 import sys
 import time
 import traceback
+import warnings
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -17,6 +18,9 @@ import yfinance as yf
 from ta.momentum import RSIIndicator
 from ta.trend import SMAIndicator, MACD
 from ta.volatility import AverageTrueRange
+
+warnings.filterwarnings("ignore")
+
 # =========================================================
 # BASE PATHS
 # =========================================================
@@ -55,29 +59,20 @@ INPUT_XLSX = (
 )
 
 # =========================================================
-# LOAD XLSX INPUT
+# LOAD STOCK INPUT
 # =========================================================
 
 def load_stock_input():
 
     try:
 
-        print("=" * 60)
-        print("LOADING XLSX INPUT")
-        print("=" * 60)
-
         if not INPUT_XLSX.exists():
 
-            print(
-                f"INPUT FILE NOT FOUND : "
-                f"{INPUT_XLSX}"
-            )
+            print(f"INPUT FILE NOT FOUND : {INPUT_XLSX}")
 
             return pd.DataFrame()
 
-        df = pd.read_excel(
-            INPUT_XLSX
-        )
+        df = pd.read_excel(INPUT_XLSX)
 
         if df.empty:
 
@@ -90,27 +85,9 @@ def load_stock_input():
             for c in df.columns
         ]
 
-        required_columns = [
-            "Stock"
-        ]
+        if "Stock" not in df.columns:
 
-        missing_columns = [
-
-            col
-
-            for col
-            in required_columns
-
-            if col not in df.columns
-
-        ]
-
-        if missing_columns:
-
-            print(
-                f"MISSING COLUMNS : "
-                f"{missing_columns}"
-            )
+            print("STOCK COLUMN MISSING")
 
             return pd.DataFrame()
 
@@ -132,28 +109,19 @@ def load_stock_input():
 
             .dropna(subset=["Stock"])
 
-            .drop_duplicates(
-                subset=["Stock"]
-            )
+            .drop_duplicates(subset=["Stock"])
 
             .reset_index(drop=True)
 
         )
 
-        print(
-            f"TOTAL STOCKS LOADED : "
-            f"{len(df)}"
-        )
+        print(f"TOTAL STOCKS LOADED : {len(df)}")
 
         return df
 
     except Exception as e:
 
-        print(
-            f"XLSX LOAD FAILED : {e}"
-        )
-
-        traceback.print_exc()
+        print(f"LOAD FAILED : {e}")
 
         return pd.DataFrame()
 
@@ -163,15 +131,9 @@ def load_stock_input():
 
 stock_input_df = load_stock_input()
 
-# =========================================================
-# EMPTY INPUT SAFETY
-# =========================================================
-
 if stock_input_df.empty:
 
-    print("=" * 60)
-    print("NO STOCK INPUT AVAILABLE")
-    print("=" * 60)
+    print("NO STOCK INPUT")
 
     sys.exit(0)
 
@@ -181,7 +143,7 @@ if stock_input_df.empty:
 
 def classify_signal(confidence):
 
-    if confidence >= 85:
+    if confidence >= 90:
 
         return "STRONG BUY"
 
@@ -189,11 +151,11 @@ def classify_signal(confidence):
 
         return "BUY"
 
-    elif confidence >= 65:
+    elif confidence >= 60:
 
         return "WATCH"
 
-    elif confidence >= 50:
+    elif confidence >= 45:
 
         return "HOLD"
 
@@ -202,7 +164,7 @@ def classify_signal(confidence):
         return "AVOID"
 
 # =========================================================
-# PROCESS SINGLE STOCK
+# PROCESS STOCK
 # =========================================================
 
 def process_stock(row):
@@ -211,86 +173,83 @@ def process_stock(row):
 
     try:
 
-        print("=" * 60)
-        print(f"PROCESSING : {stock}")
-        print("=" * 60)
-
-        time.sleep(0.6)
+        time.sleep(1.2)
 
         ticker = yf.Ticker(stock)
 
-        try:
-
-            info = ticker.fast_info
-
-        except Exception:
-
-            info = {}
-
-        try:
-
-            hist = ticker.history(
-                period="6mo",
-                interval="1d",
-                auto_adjust=True,
-                repair=True
-            )
-
-        except Exception:
-
-            print(f"HISTORY FAILED : {stock}")
-            return None
-
-        if hist.empty:
-
-            print(f"NO HISTORY : {stock}")
-            return None
-        # =================================================
-        # FAST INFO
-        # =================================================
-
-        try:
-
-            info = ticker.fast_info
-
-        except Exception:
-
-            info = {}
+        hist = pd.DataFrame()
 
         # =================================================
-        # HISTORY
+        # RETRY ENGINE
         # =================================================
 
-        try:
+        for _ in range(3):
 
-           hist = ticker.history(
-               period="6mo",
-               interval="1d",
-               auto_adjust=True,
-               repair=True
-           )
+            try:
 
-        except Exception:
+                hist = ticker.history(
+                    period="6mo",
+                    interval="1d",
+                    auto_adjust=True,
+                    repair=True,
+                    timeout=30
+                )
 
-            print(
-                f"HISTORY FAILED : "
-                f"{stock}"
-            )
+                if hist is not None and not hist.empty:
+
+                    break
+
+            except Exception:
+
+                time.sleep(2)
+
+        # =================================================
+        # EMPTY CHECK
+        # =================================================
+
+        if hist is None or hist.empty:
 
             return None
 
-        if hist.empty:
+        required_cols = [
+            "Close",
+            "High",
+            "Low"
+        ]
 
-            print(
-                f"NO HISTORY : {stock}"
-            )
+        if not all(col in hist.columns for col in required_cols):
+
+            return None
+
+        hist = hist.dropna(subset=["Close"])
+
+        if len(hist) < 50:
 
             return None
 
         close_prices = hist["Close"]
-        # =========================================================
-        # TECHNICAL INDICATORS
-        # =========================================================
+
+        current_price = float(
+            close_prices.iloc[-1]
+        )
+
+        if pd.isna(current_price):
+
+            return None
+
+        previous_close = (
+
+            float(close_prices.iloc[-2])
+
+            if len(close_prices) > 1
+
+            else current_price
+
+        )
+
+        # =================================================
+        # TECHNICALS
+        # =================================================
 
         rsi = RSIIndicator(
             close_prices,
@@ -316,46 +275,25 @@ def process_stock(row):
             low=hist["Low"],
             close=hist["Close"]
         ).average_true_range().iloc[-1]
-        
+
+        # =================================================
+        # NULL SAFETY
+        # =================================================
+
         if pd.isna(rsi):
-            rsi = 50
+                rsi = 50
 
         if pd.isna(sma_20):
-            sma_20 = current_price
+                sma_20 = current_price
 
         if pd.isna(sma_50):
-            sma_50 = current_price
+                sma_50 = current_price
 
         if pd.isna(macd):
-            macd = 0
+                macd = 0
 
         if pd.isna(atr):
-            atr = current_price * 0.02        
-        if close_prices.empty:
-
-            print(
-                f"EMPTY CLOSE DATA : "
-                f"{stock}"
-            )
-
-            return None
-
-        # =================================================
-        # PRICE METRICS
-        # =================================================
-
-        current_price = round(
-            float(close_prices.iloc[-1]),
-            2
-        )
-
-        previous_close = round(
-
-            float(close_prices.iloc[-2]),
-
-            2
-
-        ) if len(close_prices) > 1 else current_price
+                atr = current_price * 0.02
 
         # =================================================
         # RETURNS
@@ -404,51 +342,52 @@ def process_stock(row):
         )
 
         # =================================================
-        # INFO METRICS
+        # FAST INFO
         # =================================================
+
+        try:
+
+            info = ticker.fast_info
+
+        except Exception:
+
+            info = {}
 
         volume = info.get(
             "lastVolume",
             0
-        )
+        ) or 0
 
         market_cap = info.get(
             "marketCap",
             0
-        )
+        ) or 0
 
         day_high = info.get(
             "dayHigh",
-            0
+            current_price
         )
 
         day_low = info.get(
             "dayLow",
-            0
+            current_price
         )
 
         year_high = info.get(
             "yearHigh",
-            0
+            current_price
         )
 
         year_low = info.get(
             "yearLow",
-            0
+            current_price
         )
 
-        # =========================================================
-        # MULTI FACTOR SCORING
-        # =========================================================
+        # =================================================
+        # SCORING ENGINE
+        # =================================================
 
         institutional_score = 0
-
-        # ---------------------------------------------------------
-        # MARKET CAP
-        # ---------------------------------------------------------
-
-        market_cap = market_cap or 0
-        volume = volume or 0
 
         if market_cap > 500_000_000_000:
 
@@ -462,10 +401,6 @@ def process_stock(row):
 
             institutional_score += 10
 
-        # ---------------------------------------------------------
-        # LIQUIDITY
-        # ---------------------------------------------------------
-
         if volume > 5_000_000:
 
             institutional_score += 20
@@ -473,14 +408,10 @@ def process_stock(row):
         elif volume > 1_000_000:
 
             institutional_score += 15
-        
+
         elif volume > 250_000:
 
             institutional_score += 8
-
-        # ---------------------------------------------------------
-        # MOMENTUM
-        # ---------------------------------------------------------
 
         if returns_1m > 0.05:
 
@@ -494,10 +425,6 @@ def process_stock(row):
 
             institutional_score += 10
 
-        # ---------------------------------------------------------
-        # RSI
-        # ---------------------------------------------------------
-
         if 45 <= rsi <= 70:
 
             institutional_score += 10
@@ -506,37 +433,21 @@ def process_stock(row):
 
             institutional_score -= 5
 
-        # ---------------------------------------------------------
-        # TREND STRENGTH
-        # ---------------------------------------------------------
-
         if current_price > sma_20:
 
             institutional_score += 5
-        
+
         if current_price > sma_50:
 
             institutional_score += 5
-
-        # ---------------------------------------------------------
-        # MACD
-        # ---------------------------------------------------------
 
         if macd > 0:
 
             institutional_score += 5
 
-        # ---------------------------------------------------------
-        # VOLATILITY
-        # ---------------------------------------------------------
-
         if atr < current_price * 0.04:
 
             institutional_score += 5
-
-        # ---------------------------------------------------------
-        # LIMIT SCORE
-        # ---------------------------------------------------------
 
         institutional_score = max(
             0,
@@ -548,15 +459,8 @@ def process_stock(row):
         # =================================================
 
         confidence = round(
-
-            (
-                institutional_score
-                * 0.95
-            ),
-
+            institutional_score * 0.95,
             2
-
-        
         )
 
         buy_probability = round(
@@ -572,10 +476,8 @@ def process_stock(row):
 
             (
                 institutional_score
-                +
-                confidence
-                +
-                buy_probability
+                + confidence
+                + buy_probability
             ) / 3,
 
             2
@@ -586,120 +488,69 @@ def process_stock(row):
         # RESULT
         # =================================================
 
-        result = {
+        return {
 
-                "Stock": stock,
+            "Stock": stock,
 
-                "Current Price":
-                current_price,
+            "Current Price": round(current_price, 2),
 
-                "Previous Close":
-                previous_close,
+            "Previous Close": round(previous_close, 2),
 
-                "Volume":
-                volume,
+            "Volume": volume,
 
-                "Market Cap":
-                market_cap,
+            "Market Cap": market_cap,
 
-                "Day High":
-                day_high,
+            "Day High": day_high,
 
-                "Day Low":
-                day_low,
+            "Day Low": day_low,
 
-                "52W High":
-                year_high,
+            "52W High": year_high,
 
-                "52W Low":
-                year_low,
+            "52W Low": year_low,
 
-                "1M Return":
-                round(
-                        returns_1m * 100,
-                        2
-                ),
+            "1M Return": round(
+                returns_1m * 100,
+                2
+            ),
 
-                "3M Return":
-                round(
-                        returns_3m * 100,
-                        2
-                ),
+            "3M Return": round(
+                returns_3m * 100,
+                2
+            ),
 
-                "6M Return":
-                round(
-                        returns_6m * 100,
-                        2
-                ),
+            "6M Return": round(
+                returns_6m * 100,
+                2
+            ),
 
-                # =====================================================
-                # TECHNICAL INDICATORS
-                # =====================================================
+            "RSI": round(rsi, 2),
 
-                "RSI":
-                round(
-                        rsi,
-                        2
-                ),
+            "SMA20": round(sma_20, 2),
 
-                "SMA20":
-                round(
-                        sma_20,
-                        2
-                ),
+            "SMA50": round(sma_50, 2),
 
-                "SMA50":
-                round(
-                        sma_50,
-                        2
-                ),
+            "MACD": round(macd, 2),
 
-                "MACD":
-                round(
-                        macd,
-                        2
-                ),
+            "ATR": round(atr, 2),
 
-                "ATR":
-                round(
-                        atr,
-                        2
-                ),
+            "Institutional Score": institutional_score,
 
-                # =====================================================
-                # SCORING
-                # =====================================================
+            "Confidence": confidence,
 
-                "Institutional Score":
-                institutional_score,
+            "Buy Probability": buy_probability,
 
-                "Confidence":
-                confidence,
+            "Composite Score": composite_score,
 
-                "Buy Probability":
-                buy_probability,
-
-                "Composite Score":
-                composite_score,
-
-                "Trade Signal":
-                trade_signal
+            "Trade Signal": trade_signal
 
         }
-        print(f"SUCCESS : {stock}")
 
-        return result
-
-    except Exception as e:
-
-        print(f"FAILED : {stock}")
-
-        print(str(e))
+    except Exception:
 
         return None
 
 # =========================================================
-# FAST PARALLEL ENGINE
+# PARALLEL ENGINE
 # =========================================================
 
 results = []
@@ -707,14 +558,7 @@ results = []
 success_count = 0
 failed_count = 0
 
-print("=" * 60)
-print("STARTING FAST PARALLEL PIPELINE")
-print("=" * 60)
-
-MAX_WORKERS = min(
-    5,
-    len(stock_input_df)
-)
+MAX_WORKERS = 2
 
 with ThreadPoolExecutor(
     max_workers=MAX_WORKERS
@@ -748,283 +592,42 @@ with ThreadPoolExecutor(
 
                 failed_count += 1
 
-        except Exception as e:
+        except Exception:
 
             failed_count += 1
 
-            print(
-                f"THREAD ERROR : {e}"
-            )
-
 # =========================================================
-# CREATE DATAFRAME
+# FINAL DATAFRAME
 # =========================================================
 
 final_df = pd.DataFrame(results)
 
-# =========================================================
-# EMPTY DATAFRAME SAFETY
-# =========================================================
-
 if final_df.empty:
 
-    print("=" * 60)
-    print("NO VALID STOCK DATA GENERATED")
-    print("=" * 60)
+    print("NO VALID DATA GENERATED")
 
     sys.exit(0)
-
-# =========================================================
-# CLEAN DATA
-# =========================================================
 
 final_df = (
 
     final_df
 
-    .drop_duplicates(
-        subset=["Stock"]
-    )
+    .drop_duplicates(subset=["Stock"])
 
     .fillna(0)
 
     .reset_index(drop=True)
 
 )
-# =========================================================
-# SECTOR RELATIVE STRENGTH ENGINE
-# =========================================================
 
-try:
-
-        # -----------------------------
-        # ENSURE SECTOR COLUMN EXISTS
-        # -----------------------------
-
-        if "Sector" not in final_df.columns:
-
-                final_df["Sector"] = "Unknown"
-
-        # -----------------------------
-        # ENSURE RETURN COLUMNS EXIST
-        # -----------------------------
-
-        required_return_cols = [
-                "1M Return",
-                "3M Return",
-                "6M Return"
-        ]
-
-        for col in required_return_cols:
-
-                if col not in final_df.columns:
-
-                        final_df[col] = 0
-
-        # -----------------------------
-        # SECTOR RANK
-        # -----------------------------
-
-        final_df["Sector Rank"] = (
-
-                final_df
-
-                .groupby("Sector")[
-                        "Institutional Score"
-                ]
-
-                .rank(
-                        ascending=False,
-                        method="dense"
-                )
-
-        )
-
-        # -----------------------------
-        # SECTOR PERCENTILE
-        # -----------------------------
-
-        final_df["Sector Percentile"] = (
-
-                final_df
-
-                .groupby("Sector")[
-                        "Institutional Score"
-                ]
-
-                .rank(
-                        pct=True
-                ) * 100
-
-        ).round(2)
-
-        # -----------------------------
-        # MARKET LEADER
-        # -----------------------------
-
-        final_df["Market Leader"] = np.where(
-
-                final_df["Sector Percentile"] >= 90,
-
-                "YES",
-
-                "NO"
-
-        )
-
-        # -----------------------------
-        # RELATIVE STRENGTH SCORE
-        # -----------------------------
-
-        final_df["Relative Strength Score"] = (
-
-                (
-                        final_df["1M Return"] * 0.3
-                        +
-                        final_df["3M Return"] * 0.3
-                        +
-                        final_df["6M Return"] * 0.4
-                )
-
-        ).round(2)
-
-        # -----------------------------
-        # ELITE STOCK
-        # -----------------------------
-
-        if "Trade Signal" not in final_df.columns:
-
-                final_df["Trade Signal"] = "WATCH"
-
-        final_df["Elite Stock"] = np.where(
-
-                (
-                        (final_df["Institutional Score"] >= 85)
-                        &
-                        (final_df["Relative Strength Score"] >= 15)
-                        &
-                        (
-                                final_df["Trade Signal"]
-                                == "STRONG BUY"
-                        )
-                ),
-
-                "YES",
-
-                "NO"
-
-        )
-
-        print(
-                "SECTOR ENGINE COMPLETED"
-        )
-
-except Exception as e:
-
-        print(
-                f"SECTOR ENGINE FAILED : {e}"
-        )
-# =========================================================
-# SECTOR RELATIVE STRENGTH
-# =========================================================
-
-if "Sector" in final_df.columns:
-
-        final_df["Sector Rank"] = (
-
-                final_df
-
-                .groupby("Sector")[
-                        "Institutional Score"
-                ]
-
-                .rank(
-
-                        ascending=False,
-
-                        method="dense"
-
-                )
-
-        )
-
-        final_df["Sector Percentile"] = (
-
-                final_df
-
-                .groupby("Sector")[
-                        "Institutional Score"
-                ]
-
-                .rank(
-                        pct=True
-                ) * 100
-
-        ).round(2)
-# =========================================================
-# MARKET LEADER
-# =========================================================
-
-final_df["Market Leader"] = np.where(
-
-        (
-                final_df[
-                        "Sector Percentile"
-                ] >= 90
-        ),
-
-        "YES",
-
-        "NO"
-
-)
-# =========================================================
-# RELATIVE STRENGTH SCORE
-# =========================================================
-
-final_df["Relative Strength Score"] = (
-
-        (
-                final_df["1M Return"] * 0.3
-                +
-                final_df["3M Return"] * 0.3
-                +
-                final_df["6M Return"] * 0.4
-        )
-
-).round(2)
-# =========================================================
-# ELITE STOCKS
-# =========================================================
-
-final_df["Elite Stock"] = np.where(
-
-        (
-                (final_df["Institutional Score"] >= 85)
-                &
-                (final_df["Relative Strength Score"] >= 15)
-                &
-                (final_df["Trade Signal"] == "STRONG BUY")
-        ),
-
-        "YES",
-
-        "NO"
-
-)
 # =========================================================
 # SORTING
 # =========================================================
 
-if "Composite Score" in final_df.columns:
-
-    final_df = final_df.sort_values(
-
-        by="Composite Score",
-
-        ascending=False
-
-    )
+final_df = final_df.sort_values(
+    by="Composite Score",
+    ascending=False
+)
 
 # =========================================================
 # TOP PICKS
@@ -1051,51 +654,31 @@ csv_exports = {
 
 }
 
-print("=" * 60)
-print("EXPORTING CSV FILES")
-print("=" * 60)
-
 for filename, dataframe in csv_exports.items():
 
     try:
 
-        export_path = (
-            OUTPUT_DIR /
-            filename
-        )
+        export_path = OUTPUT_DIR / filename
 
         dataframe.to_csv(
-
             export_path,
-
             index=False
-
-        )
-
-        print(
-            f"EXPORTED : "
-            f"{filename}"
         )
 
     except Exception as e:
 
-        print(
-            f"EXPORT FAILED : "
-            f"{filename}"
-        )
-
+        print(f"EXPORT FAILED : {filename}")
         print(str(e))
 
 # =========================================================
-# SAVE DUCKDB
+# SAVE DATABASE
 # =========================================================
 
 try:
 
     conn.execute(
         """
-        DROP TABLE IF EXISTS
-        enriched_stocks
+        DROP TABLE IF EXISTS enriched_stocks
         """
     )
 
@@ -1111,13 +694,9 @@ try:
         """
     )
 
-    print("DUCKDB SAVED")
-
 except Exception as e:
 
-    print(
-        f"DUCKDB SAVE FAILED : {e}"
-    )
+    print(f"DB SAVE FAILED : {e}")
 
 # =========================================================
 # SAVE PARQUET
@@ -1126,27 +705,18 @@ except Exception as e:
 try:
 
     parquet_path = (
-
         OUTPUT_DIR /
         "institutional_quant.parquet"
-
     )
 
     final_df.to_parquet(
-
         parquet_path,
-
         index=False
-
     )
-
-    print("PARQUET SAVED")
 
 except Exception as e:
 
-    print(
-        f"PARQUET FAILED : {e}"
-    )
+    print(f"PARQUET FAILED : {e}")
 
 # =========================================================
 # SAVE EXCEL
@@ -1155,27 +725,18 @@ except Exception as e:
 try:
 
     excel_path = (
-
         OUTPUT_DIR /
         "institutional_quant.xlsx"
-
     )
 
     final_df.to_excel(
-
         excel_path,
-
         index=False
-
     )
-
-    print("EXCEL SAVED")
 
 except Exception as e:
 
-    print(
-        f"EXCEL FAILED : {e}"
-    )
+    print(f"EXCEL FAILED : {e}")
 
 # =========================================================
 # FINAL SUMMARY
@@ -1183,30 +744,15 @@ except Exception as e:
 
 print("=" * 60)
 
-print(
-    f"FINAL STOCK COUNT : "
-    f"{len(final_df)}"
-)
+print(f"FINAL STOCK COUNT : {len(final_df)}")
 
-print(
-    f"TOP PICKS COUNT : "
-    f"{len(top_picks_df)}"
-)
+print(f"TOP PICKS COUNT : {len(top_picks_df)}")
 
-print(
-    f"PORTFOLIO COUNT : "
-    f"{len(portfolio_df)}"
-)
+print(f"PORTFOLIO COUNT : {len(portfolio_df)}")
 
-print(
-    f"SUCCESS COUNT : "
-    f"{success_count}"
-)
+print(f"SUCCESS COUNT : {success_count}")
 
-print(
-    f"FAILED COUNT : "
-    f"{failed_count}"
-)
+print(f"FAILED COUNT : {failed_count}")
 
 print(
 
