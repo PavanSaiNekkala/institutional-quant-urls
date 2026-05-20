@@ -11,7 +11,6 @@ import pandas as pd
 import numpy as np
 
 import plotly.express as px
-import plotly.graph_objects as go
 
 from pathlib import Path
 
@@ -33,12 +32,8 @@ BASE_DIR = Path(__file__).resolve().parent
 
 OUTPUT_DIR = BASE_DIR / "output"
 
-CSV_FILE = OUTPUT_DIR / "enriched_stock_data.csv.gz"
-
-XLSX_FILE = OUTPUT_DIR / "institutional_quant.xlsx"
-
 # =========================================================
-# CACHE LOADER
+# UNIVERSAL DATA LOADER
 # =========================================================
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -59,14 +54,18 @@ def load_data(data_file):
 
                 df = pd.read_csv(
                     data_file,
-                    encoding="utf-8"
+                    encoding="utf-8",
+                    low_memory=False,
+                    on_bad_lines="skip"
                 )
 
-            except UnicodeDecodeError:
+            except Exception:
 
                 df = pd.read_csv(
                     data_file,
-                    encoding="latin1"
+                    encoding="latin1",
+                    low_memory=False,
+                    on_bad_lines="skip"
                 )
 
         # =====================================================
@@ -80,24 +79,20 @@ def load_data(data_file):
                 df = pd.read_csv(
                     data_file,
                     compression="gzip",
-                    encoding="utf-8"
+                    encoding="utf-8",
+                    low_memory=False,
+                    on_bad_lines="skip"
                 )
 
-            except UnicodeDecodeError:
+            except Exception:
 
                 df = pd.read_csv(
                     data_file,
                     compression="gzip",
-                    encoding="latin1"
+                    encoding="latin1",
+                    low_memory=False,
+                    on_bad_lines="skip"
                 )
-
-        # =====================================================
-        # PARQUET
-        # =====================================================
-
-        elif suffix.endswith(".parquet"):
-
-            df = pd.read_parquet(data_file)
 
         # =====================================================
         # EXCEL
@@ -109,7 +104,18 @@ def load_data(data_file):
             suffix.endswith(".xls")
         ):
 
-            df = pd.read_excel(data_file)
+            df = pd.read_excel(
+                data_file,
+                engine="openpyxl"
+            )
+
+        # =====================================================
+        # PARQUET
+        # =====================================================
+
+        elif suffix.endswith(".parquet"):
+
+            df = pd.read_parquet(data_file)
 
         # =====================================================
         # UNKNOWN
@@ -130,6 +136,12 @@ def load_data(data_file):
         if df.empty:
 
             return pd.DataFrame()
+
+        # =====================================================
+        # REMOVE DUPLICATE COLUMNS
+        # =====================================================
+
+        df = df.loc[:, ~df.columns.duplicated()]
 
         # =====================================================
         # CLEAN COLUMN NAMES
@@ -162,10 +174,7 @@ def load_data(data_file):
             "MACD": 0,
             "ATR": 0,
             "Momentum": 0,
-            "Volume Score": 50,
-            "1M Return": 0,
-            "3M Return": 0,
-            "6M Return": 0
+            "Volume Score": 50
 
         }
 
@@ -191,10 +200,7 @@ def load_data(data_file):
             "MACD",
             "ATR",
             "Momentum",
-            "Volume Score",
-            "1M Return",
-            "3M Return",
-            "6M Return"
+            "Volume Score"
 
         ]
 
@@ -221,11 +227,29 @@ def load_data(data_file):
 
         )
 
+        # =====================================================
+        # REMOVE EMPTY STOCKS
+        # =====================================================
+
+        df = df[
+
+            df["Stock"]
+
+            .astype(str)
+
+            .str.strip()
+
+            != ""
+
+        ]
+
         return df
 
     except Exception as e:
 
-        st.error(f"DATA LOAD FAILED : {e}")
+        st.error(
+            f"DATA LOAD FAILED : {e}"
+        )
 
         return pd.DataFrame()
 
@@ -235,17 +259,15 @@ def load_data(data_file):
 
 possible_files = [
 
-    CSV_FILE,
+    OUTPUT_DIR / "enriched_stock_data.csv.gz",
 
-    BASE_DIR / "enriched_stock_data.csv.gz",
+    OUTPUT_DIR / "enriched_stock_data.csv",
 
-    BASE_DIR / "output" / "enriched_stock_data.csv",
+    OUTPUT_DIR / "institutional_quant.xlsx",
 
-    BASE_DIR / "output" / "institutional_quant.xlsx",
+    BASE_DIR / "institutional_quant.xlsx",
 
-    Path("/mount/src/institutional-quant-urls/output/enriched_stock_data.csv.gz"),
-
-    Path("/mount/src/institutional-quant-urls/enriched_stock_data.csv.gz")
+    Path("/mount/src/institutional-quant-urls/output/enriched_stock_data.csv.gz")
 
 ]
 
@@ -268,11 +290,10 @@ for file_path in possible_files:
                 break
 
     except Exception:
-
-        continue
+        pass
 
 # =========================================================
-# EMPTY CHECK
+# EMPTY DATA CHECK
 # =========================================================
 
 if df.empty:
@@ -281,16 +302,6 @@ if df.empty:
         """
         DATA LOAD FAILED :
         No valid institutional dataset found.
-        """
-    )
-
-    st.info(
-        """
-        Expected files:
-
-        • enriched_stock_data.csv.gz
-        • enriched_stock_data.csv
-        • institutional_quant.xlsx
         """
     )
 
@@ -350,167 +361,40 @@ min_confidence = st.sidebar.slider(
     70
 )
 
-all_sectors = sorted(
-    df["Sector"]
-    .dropna()
-    .astype(str)
-    .unique()
-)
-
-selected_sectors = st.sidebar.multiselect(
-    "Sector",
-    options=all_sectors,
-    default=[]
-)
-
 # =========================================================
 # MARKET REGIME
 # =========================================================
 
-from market_regime import get_market_regime
+try:
 
-regime, regime_color, regime_details = get_market_regime()
+    from market_regime import get_market_regime
 
-# =========================================================
-# FILTERED DATA
-# =========================================================
+    regime, regime_color, regime_details = get_market_regime()
 
-filtered_df = df.copy()
+except Exception:
 
-# =========================================================
-# ADVANCED SIGNAL ENGINE
-# =========================================================
+    regime = "SIDEWAYS"
 
-def generate_trade_signal(row, market_regime):
+    regime_color = "#FF9900"
 
-    try:
-        score = float(row.get("Institutional Score", 0))
-    except:
-        score = 0
-
-    try:
-        rsi = float(row.get("RSI", 50))
-    except:
-        rsi = 50
-
-    try:
-        confidence = float(row.get("Confidence", 50))
-    except:
-        confidence = 50
-
-    try:
-        momentum = float(row.get("Momentum", 0))
-    except:
-        momentum = 0
-
-    try:
-        volume_score = float(row.get("Volume Score", 50))
-    except:
-        volume_score = 50
-
-    regime_lower = str(market_regime).lower()
-
-    # =====================================================
-    # REGIME ADAPTIVE THRESHOLDS
-    # =====================================================
-
-    if "bull" in regime_lower:
-
-        strong_buy_score = 85
-        strong_buy_conf = 70
-        strong_buy_rsi = 55
-        buy_score = 70
-
-    elif "bear" in regime_lower:
-
-        strong_buy_score = 95
-        strong_buy_conf = 88
-        strong_buy_rsi = 60
-        buy_score = 82
-
-    elif "sideways" in regime_lower:
-
-        strong_buy_score = 90
-        strong_buy_conf = 75
-        strong_buy_rsi = 50
-        buy_score = 72
-
-    else:
-
-        strong_buy_score = 88
-        strong_buy_conf = 72
-        strong_buy_rsi = 52
-        buy_score = 70
-
-    # =====================================================
-    # STRONG BUY
-    # =====================================================
-
-    if (
-        score >= strong_buy_score
-        and confidence >= strong_buy_conf
-        and rsi >= strong_buy_rsi
-        and momentum > 0
-        and volume_score >= 60
-    ):
-
-        return "STRONG BUY"
-
-    # =====================================================
-    # BUY
-    # =====================================================
-
-    elif (
-        score >= buy_score
-        and confidence >= 55
-    ):
-
-        return "BUY"
-
-    # =====================================================
-    # HOLD
-    # =====================================================
-
-    elif score >= 45:
-
-        return "HOLD"
-
-    # =====================================================
-    # WATCH
-    # =====================================================
-
-    elif score >= 25:
-
-        return "WATCH"
-
-    # =====================================================
-    # AVOID
-    # =====================================================
-
-    else:
-
-        return "AVOID"
-
-# =========================================================
-# APPLY SIGNAL ENGINE
-# =========================================================
-
-filtered_df["Trade Signal"] = filtered_df.apply(
-    lambda row: generate_trade_signal(row, regime),
-    axis=1
-)
+    regime_details = {}
 
 # =========================================================
 # FILTERS
 # =========================================================
+
+filtered_df = df.copy()
 
 if search_stock:
 
     filtered_df = filtered_df[
 
         filtered_df["Stock"]
+
         .astype(str)
+
         .str.upper()
+
         .str.contains(
             search_stock.upper(),
             na=False
@@ -521,24 +405,24 @@ if search_stock:
 if len(selected_trade_signal) > 0:
 
     filtered_df = filtered_df[
+
         filtered_df["Trade Signal"]
+
         .isin(selected_trade_signal)
+
     ]
 
 filtered_df = filtered_df[
+
     filtered_df["Institutional Score"] >= min_score
+
 ]
 
 filtered_df = filtered_df[
+
     filtered_df["Confidence"] >= min_confidence
+
 ]
-
-if len(selected_sectors) > 0:
-
-    filtered_df = filtered_df[
-        filtered_df["Sector"]
-        .isin(selected_sectors)
-    ]
 
 # =========================================================
 # HEADER
@@ -549,37 +433,6 @@ st.title("🏦 Institutional Quant Platform")
 st.caption(
     "AI Powered Institutional Analytics Engine"
 )
-
-st.write(
-    f"""
-    NIFTY: {regime_details.get('NIFTY', 'N/A')}
-    SMA50: {regime_details.get('SMA50', 'N/A')}
-    SMA200: {regime_details.get('SMA200', 'N/A')}
-    RSI: {regime_details.get('RSI', 'N/A')}
-    """
-)
-
-# =========================================================
-# MARKET REGIME COLORS
-# =========================================================
-
-regime_lower = regime.lower()
-
-if "bull" in regime_lower:
-
-    regime_color = "#008000"
-
-elif "bear" in regime_lower:
-
-    regime_color = "#CC0000"
-
-elif "sideways" in regime_lower:
-
-    regime_color = "#FF8C00"
-
-else:
-
-    regime_color = "#666666"
 
 # =========================================================
 # REGIME BANNER
