@@ -7,10 +7,7 @@ import sys
 import time
 import traceback
 from pathlib import Path
-from concurrent.futures import
-    ThreadPoolExecutor,
-    as_completed
-)
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import duckdb
 import numpy as np
