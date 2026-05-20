@@ -75,10 +75,21 @@ def load_data(data_file):
 
         elif suffix.endswith(".gz"):
 
-            df = pd.read_csv(
-                data_file,
-                compression="gzip"
-            )
+            try:
+
+                df = pd.read_csv(
+                    data_file,
+                    compression="gzip",
+                    encoding="utf-8"
+                )
+
+            except UnicodeDecodeError:
+
+                df = pd.read_csv(
+                    data_file,
+                    compression="gzip",
+                    encoding="latin1"
+                )
 
         # =====================================================
         # PARQUET
@@ -113,6 +124,14 @@ def load_data(data_file):
             return pd.DataFrame()
 
         # =====================================================
+        # EMPTY CHECK
+        # =====================================================
+
+        if df.empty:
+
+            return pd.DataFrame()
+
+        # =====================================================
         # CLEAN COLUMN NAMES
         # =====================================================
 
@@ -142,6 +161,8 @@ def load_data(data_file):
             "SMA50": 0,
             "MACD": 0,
             "ATR": 0,
+            "Momentum": 0,
+            "Volume Score": 50,
             "1M Return": 0,
             "3M Return": 0,
             "6M Return": 0
@@ -169,6 +190,8 @@ def load_data(data_file):
             "SMA50",
             "MACD",
             "ATR",
+            "Momentum",
+            "Volume Score",
             "1M Return",
             "3M Return",
             "6M Return"
@@ -210,11 +233,66 @@ def load_data(data_file):
 # LOAD DATA
 # =========================================================
 
-df = load_data(CSV_FILE)
+possible_files = [
+
+    CSV_FILE,
+
+    BASE_DIR / "enriched_stock_data.csv.gz",
+
+    BASE_DIR / "output" / "enriched_stock_data.csv",
+
+    BASE_DIR / "output" / "institutional_quant.xlsx",
+
+    Path("/mount/src/institutional-quant-urls/output/enriched_stock_data.csv.gz"),
+
+    Path("/mount/src/institutional-quant-urls/enriched_stock_data.csv.gz")
+
+]
+
+df = pd.DataFrame()
+
+loaded_file = None
+
+for file_path in possible_files:
+
+    try:
+
+        if file_path.exists():
+
+            df = load_data(file_path)
+
+            if not df.empty:
+
+                loaded_file = file_path
+
+                break
+
+    except Exception:
+
+        continue
+
+# =========================================================
+# EMPTY CHECK
+# =========================================================
 
 if df.empty:
 
-    st.warning("No institutional data available.")
+    st.error(
+        """
+        DATA LOAD FAILED :
+        No valid institutional dataset found.
+        """
+    )
+
+    st.info(
+        """
+        Expected files:
+
+        • enriched_stock_data.csv.gz
+        • enriched_stock_data.csv
+        • institutional_quant.xlsx
+        """
+    )
 
     st.stop()
 
@@ -223,6 +301,10 @@ if df.empty:
 # =========================================================
 
 st.sidebar.title("Institutional Controls")
+
+st.sidebar.success(
+    f"Loaded : {loaded_file.name}"
+)
 
 search_stock = st.sidebar.text_input(
     "Search Stock"
@@ -241,10 +323,10 @@ signal_order = [
 signal_colors = {
 
     "STRONG BUY": "#006400",
-    "BUY": "#00AA00",
-    "WATCH": "#FF8C00",
-    "HOLD": "#1E90FF",
-    "AVOID": "#FF0000"
+    "BUY": "#00CC44",
+    "WATCH": "#FF9900",
+    "HOLD": "#3399FF",
+    "AVOID": "#FF3333"
 
 }
 
@@ -296,7 +378,7 @@ regime, regime_color, regime_details = get_market_regime()
 filtered_df = df.copy()
 
 # =========================================================
-# ADVANCED INSTITUTIONAL SIGNAL ENGINE
+# ADVANCED SIGNAL ENGINE
 # =========================================================
 
 def generate_trade_signal(row, market_regime):
@@ -337,7 +419,6 @@ def generate_trade_signal(row, market_regime):
         strong_buy_score = 85
         strong_buy_conf = 70
         strong_buy_rsi = 55
-
         buy_score = 70
 
     elif "bear" in regime_lower:
@@ -345,7 +426,6 @@ def generate_trade_signal(row, market_regime):
         strong_buy_score = 95
         strong_buy_conf = 88
         strong_buy_rsi = 60
-
         buy_score = 82
 
     elif "sideways" in regime_lower:
@@ -353,7 +433,6 @@ def generate_trade_signal(row, market_regime):
         strong_buy_score = 90
         strong_buy_conf = 75
         strong_buy_rsi = 50
-
         buy_score = 72
 
     else:
@@ -361,7 +440,6 @@ def generate_trade_signal(row, market_regime):
         strong_buy_score = 88
         strong_buy_conf = 72
         strong_buy_rsi = 52
-
         buy_score = 70
 
     # =====================================================
@@ -401,9 +479,17 @@ def generate_trade_signal(row, market_regime):
     # WATCH
     # =====================================================
 
-    else:
+    elif score >= 25:
 
         return "WATCH"
+
+    # =====================================================
+    # AVOID
+    # =====================================================
+
+    else:
+
+        return "AVOID"
 
 # =========================================================
 # APPLY SIGNAL ENGINE
@@ -415,7 +501,7 @@ filtered_df["Trade Signal"] = filtered_df.apply(
 )
 
 # =========================================================
-# SEARCH FILTER
+# FILTERS
 # =========================================================
 
 if search_stock:
@@ -432,20 +518,12 @@ if search_stock:
 
     ]
 
-# =========================================================
-# SIGNAL FILTER
-# =========================================================
-
 if len(selected_trade_signal) > 0:
 
     filtered_df = filtered_df[
         filtered_df["Trade Signal"]
         .isin(selected_trade_signal)
     ]
-
-# =========================================================
-# SCORE FILTER
-# =========================================================
 
 filtered_df = filtered_df[
     filtered_df["Institutional Score"] >= min_score
@@ -454,10 +532,6 @@ filtered_df = filtered_df[
 filtered_df = filtered_df[
     filtered_df["Confidence"] >= min_confidence
 ]
-
-# =========================================================
-# SECTOR FILTER
-# =========================================================
 
 if len(selected_sectors) > 0:
 
@@ -476,10 +550,6 @@ st.caption(
     "AI Powered Institutional Analytics Engine"
 )
 
-# =========================================================
-# MARKET DETAILS
-# =========================================================
-
 st.write(
     f"""
     NIFTY: {regime_details.get('NIFTY', 'N/A')}
@@ -490,20 +560,42 @@ st.write(
 )
 
 # =========================================================
-# MARKET REGIME BANNER
+# MARKET REGIME COLORS
+# =========================================================
+
+regime_lower = regime.lower()
+
+if "bull" in regime_lower:
+
+    regime_color = "#008000"
+
+elif "bear" in regime_lower:
+
+    regime_color = "#CC0000"
+
+elif "sideways" in regime_lower:
+
+    regime_color = "#FF8C00"
+
+else:
+
+    regime_color = "#666666"
+
+# =========================================================
+# REGIME BANNER
 # =========================================================
 
 st.markdown(
     f"""
     <div style="
         background-color:{regime_color};
-        padding:15px;
-        border-radius:10px;
+        padding:18px;
+        border-radius:12px;
         text-align:center;
-        font-size:28px;
+        font-size:30px;
         font-weight:bold;
         color:white;
-        margin-bottom:20px;
+        margin-bottom:25px;
     ">
         MARKET REGIME : {regime}
     </div>
@@ -515,7 +607,7 @@ st.markdown(
 # METRICS
 # =========================================================
 
-bullish_count = len(
+strong_buy_count = len(
     filtered_df[
         filtered_df["Trade Signal"] == "STRONG BUY"
     ]
@@ -537,16 +629,12 @@ avg_rsi = round(
     2
 )
 
-# =========================================================
-# METRIC CARDS
-# =========================================================
-
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     st.metric(
         "Strong Buy Stocks",
-        bullish_count
+        strong_buy_count
     )
 
 with col2:
@@ -568,7 +656,7 @@ with col4:
     )
 
 # =========================================================
-# TRADE SIGNAL DISTRIBUTION
+# PIE CHART
 # =========================================================
 
 st.markdown("---")
@@ -582,7 +670,53 @@ signal_chart = px.pie(
     color_discrete_map=signal_colors
 )
 
+signal_chart.update_traces(
+    textposition="inside",
+    textinfo="percent+label"
+)
+
 st.plotly_chart(
     signal_chart,
     width="stretch"
+)
+
+# =========================================================
+# TOP STOCKS
+# =========================================================
+
+st.markdown("---")
+
+st.subheader("Top Institutional Opportunities")
+
+display_columns = [
+
+    "Stock",
+    "Sector",
+    "Trade Signal",
+    "Institutional Score",
+    "Confidence",
+    "RSI",
+    "Current Price"
+
+]
+
+available_columns = [
+
+    col
+
+    for col in display_columns
+
+    if col in filtered_df.columns
+
+]
+
+top_df = filtered_df.sort_values(
+    by="Institutional Score",
+    ascending=False
+)
+
+st.dataframe(
+    top_df[available_columns],
+    width="stretch",
+    hide_index=True
 )
