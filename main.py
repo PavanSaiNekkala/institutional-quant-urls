@@ -1,11 +1,12 @@
 # =========================================================
 # INSTITUTIONAL QUANT PLATFORM
-# FINAL PRODUCTION-GRADE MAIN.PY
+# ELITE PRODUCTION-GRADE MAIN.PY
 # =========================================================
 
 import sys
+import gc
 import time
-import traceback
+import logging
 import warnings
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -20,6 +21,17 @@ from ta.trend import SMAIndicator, MACD
 from ta.volatility import AverageTrueRange
 
 warnings.filterwarnings("ignore")
+
+# =========================================================
+# LOGGER
+# =========================================================
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s"
+)
+
+logger = logging.getLogger(__name__)
 
 # =========================================================
 # BASE PATHS
@@ -68,7 +80,9 @@ def load_stock_input():
 
         if not INPUT_XLSX.exists():
 
-            print(f"INPUT FILE NOT FOUND : {INPUT_XLSX}")
+            logger.error(
+                f"INPUT FILE NOT FOUND : {INPUT_XLSX}"
+            )
 
             return pd.DataFrame()
 
@@ -76,7 +90,7 @@ def load_stock_input():
 
         if df.empty:
 
-            print("INPUT XLSX EMPTY")
+            logger.error("INPUT XLSX EMPTY")
 
             return pd.DataFrame()
 
@@ -87,7 +101,7 @@ def load_stock_input():
 
         if "Stock" not in df.columns:
 
-            print("STOCK COLUMN MISSING")
+            logger.error("STOCK COLUMN MISSING")
 
             return pd.DataFrame()
 
@@ -115,13 +129,15 @@ def load_stock_input():
 
         )
 
-        print(f"TOTAL STOCKS LOADED : {len(df)}")
+        logger.info(
+            f"TOTAL STOCKS LOADED : {len(df)}"
+        )
 
         return df
 
     except Exception as e:
 
-        print(f"LOAD FAILED : {e}")
+        logger.error(f"LOAD FAILED : {e}")
 
         return pd.DataFrame()
 
@@ -133,34 +149,64 @@ stock_input_df = load_stock_input()
 
 if stock_input_df.empty:
 
-    print("NO STOCK INPUT")
+    logger.error("NO STOCK INPUT")
 
     sys.exit(0)
 
 # =========================================================
-# TRADE SIGNAL CLASSIFIER
+# MARKET REGIME
+# =========================================================
+
+def detect_market_regime(
+    current_price,
+    sma_20,
+    sma_50,
+    rsi,
+    macd
+):
+
+    bullish = (
+        current_price > sma_20 and
+        sma_20 > sma_50 and
+        macd > 0 and
+        rsi > 55
+    )
+
+    bearish = (
+        current_price < sma_20 and
+        sma_20 < sma_50 and
+        macd < 0 and
+        rsi < 45
+    )
+
+    if bullish:
+        return "BULLISH"
+
+    elif bearish:
+        return "BEARISH"
+
+    else:
+        return "SIDEWAYS"
+
+# =========================================================
+# TRADE SIGNAL
 # =========================================================
 
 def classify_signal(confidence):
 
     if confidence >= 90:
-
         return "STRONG BUY"
 
     elif confidence >= 75:
-
         return "BUY"
 
     elif confidence >= 60:
-
         return "WATCH"
 
     elif confidence >= 45:
-
         return "HOLD"
 
     else:
-
         return "AVOID"
 
 # =========================================================
@@ -173,7 +219,7 @@ def process_stock(row):
 
     try:
 
-        print(f"PROCESSING : {stock}")
+        logger.info(f"PROCESSING : {stock}")
 
         time.sleep(1.2)
 
@@ -181,9 +227,9 @@ def process_stock(row):
 
         hist = pd.DataFrame()
 
-        # ============================================
+        # =================================================
         # RETRY ENGINE
-        # ============================================
+        # =================================================
 
         for _ in range(3):
 
@@ -201,45 +247,70 @@ def process_stock(row):
                     break
 
             except Exception:
+
                 time.sleep(2)
 
-        # ============================================
-        # EMPTY CHECK
-        # ============================================
+        # =================================================
+        # VALIDATION
+        # =================================================
 
         if hist is None or hist.empty:
-            print(f"FAILED : {stock}")
+
+            logger.error(f"FAILED : {stock}")
+
             return None
 
-        required_cols = ["Close", "High", "Low"]
+        required_cols = [
+            "Close",
+            "High",
+            "Low"
+        ]
 
-        if not all(col in hist.columns for col in required_cols):
-            print(f"FAILED : {stock}")
+        if not all(
+            col in hist.columns
+            for col in required_cols
+        ):
+
+            logger.error(f"FAILED : {stock}")
+
             return None
 
         hist = hist.dropna(subset=["Close"])
 
         if len(hist) < 50:
-            print(f"FAILED : {stock}")
+
+            logger.error(f"FAILED : {stock}")
+
             return None
 
         close_prices = hist["Close"]
 
-        current_price = float(close_prices.iloc[-1])
+        current_price = float(
+            close_prices.iloc[-1]
+        )
 
-        if pd.isna(current_price):
-            print(f"FAILED : {stock}")
+        if (
+            pd.isna(current_price)
+            or current_price <= 0
+        ):
+
+            logger.error(f"FAILED : {stock}")
+
             return None
 
         previous_close = (
+
             float(close_prices.iloc[-2])
+
             if len(close_prices) > 1
+
             else current_price
+
         )
 
-        # ============================================
-        # TECHNICAL INDICATORS
-        # ============================================
+        # =================================================
+        # TECHNICALS
+        # =================================================
 
         rsi = RSIIndicator(
             close_prices,
@@ -266,9 +337,9 @@ def process_stock(row):
             close=hist["Close"]
         ).average_true_range().iloc[-1]
 
-        # ============================================
+        # =================================================
         # NULL SAFETY
-        # ============================================
+        # =================================================
 
         if pd.isna(rsi):
             rsi = 50
@@ -285,31 +356,34 @@ def process_stock(row):
         if pd.isna(atr):
             atr = current_price * 0.02
 
-        # ============================================
+        # =================================================
         # RETURNS
-        # ============================================
+        # =================================================
 
         returns_1m = (
-            (close_prices.iloc[-1] / close_prices.iloc[-22]) - 1
+            (close_prices.iloc[-1] /
+             close_prices.iloc[-22]) - 1
             if len(close_prices) > 22
             else 0
         )
 
         returns_3m = (
-            (close_prices.iloc[-1] / close_prices.iloc[-66]) - 1
+            (close_prices.iloc[-1] /
+             close_prices.iloc[-66]) - 1
             if len(close_prices) > 66
             else 0
         )
 
         returns_6m = (
-            (close_prices.iloc[-1] / close_prices.iloc[0]) - 1
+            (close_prices.iloc[-1] /
+             close_prices.iloc[0]) - 1
             if len(close_prices) > 1
             else 0
         )
 
-        # ============================================
+        # =================================================
         # FAST INFO
-        # ============================================
+        # =================================================
 
         try:
             info = ticker.fast_info
@@ -317,18 +391,39 @@ def process_stock(row):
         except Exception:
             info = {}
 
-        volume = info.get("lastVolume", 0) or 0
-        market_cap = info.get("marketCap", 0) or 0
+        volume = info.get(
+            "lastVolume",
+            0
+        ) or 0
 
-        day_high = info.get("dayHigh", current_price)
-        day_low = info.get("dayLow", current_price)
+        market_cap = info.get(
+            "marketCap",
+            0
+        ) or 0
 
-        year_high = info.get("yearHigh", current_price)
-        year_low = info.get("yearLow", current_price)
+        day_high = info.get(
+            "dayHigh",
+            current_price
+        )
 
-        # ============================================
-        # INSTITUTIONAL SCORE
-        # ============================================
+        day_low = info.get(
+            "dayLow",
+            current_price
+        )
+
+        year_high = info.get(
+            "yearHigh",
+            current_price
+        )
+
+        year_low = info.get(
+            "yearLow",
+            current_price
+        )
+
+        # =================================================
+        # INSTITUTIONAL SCORING
+        # =================================================
 
         institutional_score = 0
 
@@ -377,17 +472,73 @@ def process_stock(row):
         if atr < current_price * 0.04:
             institutional_score += 5
 
+        # =================================================
+        # VOLATILITY ENGINE
+        # =================================================
+
+        volatility_ratio = atr / current_price
+
+        if volatility_ratio > 0.08:
+            institutional_score -= 10
+
+        elif volatility_ratio < 0.03:
+            institutional_score += 5
+
+        # =================================================
+        # TREND ENGINE
+        # =================================================
+
+        trend_strength = (
+            (
+                current_price - sma_50
+            ) / sma_50
+        ) * 100
+
+        if trend_strength > 20:
+            institutional_score += 10
+
+        elif trend_strength > 10:
+            institutional_score += 5
+
+        elif trend_strength < -10:
+            institutional_score -= 10
+
         institutional_score = max(
             0,
             min(institutional_score, 100)
         )
 
-        # ============================================
-        # SIGNAL ENGINE
-        # ============================================
+        # =================================================
+        # MARKET REGIME
+        # =================================================
+
+        market_regime = detect_market_regime(
+            current_price,
+            sma_20,
+            sma_50,
+            rsi,
+            macd
+        )
+
+        # =================================================
+        # CONFIDENCE
+        # =================================================
+
+        confidence = institutional_score
+
+        if market_regime == "BULLISH":
+            confidence += 5
+
+        elif market_regime == "BEARISH":
+            confidence -= 10
+
+        confidence = max(
+            0,
+            min(confidence, 100)
+        )
 
         confidence = round(
-            institutional_score * 0.95,
+            confidence,
             2
         )
 
@@ -396,56 +547,122 @@ def process_stock(row):
             2
         )
 
-        trade_signal = classify_signal(confidence)
+        trade_signal = classify_signal(
+            confidence
+        )
+
+        if (
+            market_regime == "BULLISH" and
+            confidence >= 85 and
+            returns_3m > 0.15
+        ):
+            trade_signal = "STRONG BUY"
 
         composite_score = round(
             (
-                institutional_score
-                + confidence
-                + buy_probability
+                institutional_score +
+                confidence +
+                buy_probability
             ) / 3,
             2
         )
 
-        print(f"SUCCESS : {stock}")
+        buy_quality = round(
+            (
+                confidence +
+                institutional_score +
+                (100 - volatility_ratio * 100)
+            ) / 3,
+            2
+        )
+
+        logger.info(f"SUCCESS : {stock}")
 
         return {
 
             "Stock": stock,
-            "Current Price": round(current_price, 2),
-            "Previous Close": round(previous_close, 2),
 
-            "Volume": volume,
-            "Market Cap": market_cap,
+            "Current Price":
+            round(current_price, 2),
 
-            "Day High": day_high,
-            "Day Low": day_low,
+            "Previous Close":
+            round(previous_close, 2),
 
-            "52W High": year_high,
-            "52W Low": year_low,
+            "Volume":
+            volume,
 
-            "1M Return": round(returns_1m * 100, 2),
-            "3M Return": round(returns_3m * 100, 2),
-            "6M Return": round(returns_6m * 100, 2),
+            "Market Cap":
+            market_cap,
 
-            "RSI": round(rsi, 2),
-            "SMA20": round(sma_20, 2),
-            "SMA50": round(sma_50, 2),
+            "Day High":
+            day_high,
 
-            "MACD": round(macd, 2),
-            "ATR": round(atr, 2),
+            "Day Low":
+            day_low,
 
-            "Institutional Score": institutional_score,
-            "Confidence": confidence,
-            "Buy Probability": buy_probability,
-            "Composite Score": composite_score,
+            "52W High":
+            year_high,
 
-            "Trade Signal": trade_signal
+            "52W Low":
+            year_low,
+
+            "1M Return":
+            round(returns_1m * 100, 2),
+
+            "3M Return":
+            round(returns_3m * 100, 2),
+
+            "6M Return":
+            round(returns_6m * 100, 2),
+
+            "RSI":
+            round(rsi, 2),
+
+            "SMA20":
+            round(sma_20, 2),
+
+            "SMA50":
+            round(sma_50, 2),
+
+            "MACD":
+            round(macd, 2),
+
+            "ATR":
+            round(atr, 2),
+
+            "Volatility Ratio":
+            round(volatility_ratio, 4),
+
+            "Trend Strength":
+            round(trend_strength, 2),
+
+            "Market Regime":
+            market_regime,
+
+            "Institutional Score":
+            institutional_score,
+
+            "Confidence":
+            confidence,
+
+            "Buy Probability":
+            buy_probability,
+
+            "Buy Quality":
+            buy_quality,
+
+            "Composite Score":
+            composite_score,
+
+            "Trade Signal":
+            trade_signal
         }
 
-    except Exception:
+    except Exception as e:
 
-        print(f"FAILED : {stock}")
+        logger.error(
+            f"FAILED : {stock} | {str(e)}"
+        )
 
         return None
 
@@ -458,7 +675,7 @@ results = []
 success_count = 0
 failed_count = 0
 
-MAX_WORKERS = 2
+MAX_WORKERS = 3
 
 with ThreadPoolExecutor(
     max_workers=MAX_WORKERS
@@ -504,7 +721,9 @@ final_df = pd.DataFrame(results)
 
 if final_df.empty:
 
-    print("NO VALID DATA GENERATED")
+    logger.error(
+        "NO VALID DATA GENERATED"
+    )
 
     sys.exit(0)
 
@@ -516,7 +735,31 @@ final_df = (
 
     .fillna(0)
 
+    .infer_objects(copy=False)
+
     .reset_index(drop=True)
+
+)
+
+# =========================================================
+# FILTERING
+# =========================================================
+
+final_df = final_df[
+    final_df["Confidence"] >= 60
+]
+
+# =========================================================
+# FINAL RANKING
+# =========================================================
+
+final_df["Final Rank Score"] = (
+
+    final_df["Composite Score"] * 0.45 +
+
+    final_df["Buy Quality"] * 0.35 +
+
+    final_df["Confidence"] * 0.20
 
 )
 
@@ -525,7 +768,7 @@ final_df = (
 # =========================================================
 
 final_df = final_df.sort_values(
-    by="Composite Score",
+    by="Final Rank Score",
     ascending=False
 )
 
@@ -538,7 +781,7 @@ top_picks_df = final_df.head(100)
 portfolio_df = top_picks_df.copy()
 
 # =========================================================
-# EXPORT CSV
+# EXPORTS
 # =========================================================
 
 csv_exports = {
@@ -551,7 +794,6 @@ csv_exports = {
 
     "top_institutional_picks.csv":
     top_picks_df
-
 }
 
 for filename, dataframe in csv_exports.items():
@@ -562,13 +804,17 @@ for filename, dataframe in csv_exports.items():
 
         dataframe.to_csv(
             export_path,
-            index=False
+            index=False,
+            compression="gzip"
         )
 
     except Exception as e:
 
-        print(f"EXPORT FAILED : {filename}")
-        print(str(e))
+        logger.error(
+            f"EXPORT FAILED : {filename}"
+        )
+
+        logger.error(str(e))
 
 # =========================================================
 # SAVE DATABASE
@@ -596,10 +842,12 @@ try:
 
 except Exception as e:
 
-    print(f"DB SAVE FAILED : {e}")
+    logger.error(
+        f"DB SAVE FAILED : {e}"
+    )
 
 # =========================================================
-# SAVE PARQUET
+# PARQUET
 # =========================================================
 
 try:
@@ -616,10 +864,12 @@ try:
 
 except Exception as e:
 
-    print(f"PARQUET FAILED : {e}")
+    logger.error(
+        f"PARQUET FAILED : {e}"
+    )
 
 # =========================================================
-# SAVE EXCEL
+# EXCEL
 # =========================================================
 
 try:
@@ -636,25 +886,43 @@ try:
 
 except Exception as e:
 
-    print(f"EXCEL FAILED : {e}")
+    logger.error(
+        f"EXCEL FAILED : {e}"
+    )
+
+# =========================================================
+# MEMORY CLEANUP
+# =========================================================
+
+gc.collect()
 
 # =========================================================
 # FINAL SUMMARY
 # =========================================================
 
-print("=" * 60)
+logger.info("=" * 60)
 
-print(f"FINAL STOCK COUNT : {len(final_df)}")
+logger.info(
+    f"FINAL STOCK COUNT : {len(final_df)}"
+)
 
-print(f"TOP PICKS COUNT : {len(top_picks_df)}")
+logger.info(
+    f"TOP PICKS COUNT : {len(top_picks_df)}"
+)
 
-print(f"PORTFOLIO COUNT : {len(portfolio_df)}")
+logger.info(
+    f"PORTFOLIO COUNT : {len(portfolio_df)}"
+)
 
-print(f"SUCCESS COUNT : {success_count}")
+logger.info(
+    f"SUCCESS COUNT : {success_count}"
+)
 
-print(f"FAILED COUNT : {failed_count}")
+logger.info(
+    f"FAILED COUNT : {failed_count}"
+)
 
-print(
+logger.info(
 
     f"SUCCESS RATE : "
 
@@ -662,10 +930,10 @@ print(
 
 )
 
-print("=" * 60)
+logger.info("=" * 60)
 
-print("PIPELINE COMPLETED")
+logger.info("PIPELINE COMPLETED")
 
-print("=" * 60)
+logger.info("=" * 60)
 
 conn.close()
