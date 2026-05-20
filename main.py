@@ -173,11 +173,360 @@ def process_stock(row):
 
     try:
 
+        # ============================================
+        # SHOW PROCESSING
+        # ============================================
+
+        print(f"PROCESSING : {stock}")
+
+        # ============================================
+        # API THROTTLE CONTROL
+        # ============================================
+
         time.sleep(1.2)
 
         ticker = yf.Ticker(stock)
 
         hist = pd.DataFrame()
+
+        # ============================================
+        # RETRY ENGINE
+        # ============================================
+
+        for attempt in range(3):
+
+            try:
+
+                hist = ticker.history(
+                    period="6mo",
+                    interval="1d",
+                    auto_adjust=True,
+                    repair=True,
+                    timeout=30
+                )
+
+                if hist is not None and not hist.empty:
+
+                    break
+
+            except Exception:
+
+                time.sleep(2)
+
+        # ============================================
+        # EMPTY HISTORY CHECK
+        # ============================================
+
+        if hist is None or hist.empty:
+
+            print(f"FAILED : {stock}")
+
+            return None
+
+        required_cols = [
+            "Close",
+            "High",
+            "Low"
+        ]
+
+        if not all(col in hist.columns for col in required_cols):
+
+            print(f"FAILED : {stock}")
+
+            return None
+
+        hist = hist.dropna(subset=["Close"])
+
+        if len(hist) < 50:
+
+            print(f"FAILED : {stock}")
+
+            return None
+
+        close_prices = hist["Close"]
+
+        current_price = float(
+            close_prices.iloc[-1]
+        )
+
+        if pd.isna(current_price):
+
+            print(f"FAILED : {stock}")
+
+            return None
+
+        previous_close = (
+
+            float(close_prices.iloc[-2])
+
+            if len(close_prices) > 1
+
+            else current_price
+
+        )
+
+        # ============================================
+        # TECHNICAL INDICATORS
+        # ============================================
+
+        rsi = RSIIndicator(
+            close_prices,
+            window=14
+        ).rsi().iloc[-1]
+
+        sma_20 = SMAIndicator(
+            close_prices,
+            window=20
+        ).sma_indicator().iloc[-1]
+
+        sma_50 = SMAIndicator(
+            close_prices,
+            window=50
+        ).sma_indicator().iloc[-1]
+
+        macd = MACD(
+            close_prices
+        ).macd().iloc[-1]
+
+        atr = AverageTrueRange(
+            high=hist["High"],
+            low=hist["Low"],
+            close=hist["Close"]
+        ).average_true_range().iloc[-1]
+
+        # ============================================
+        # NULL SAFETY
+        # ============================================
+
+        if pd.isna(rsi):
+                rsi = 50
+
+        if pd.isna(sma_20):
+                sma_20 = current_price
+
+        if pd.isna(sma_50):
+                sma_50 = current_price
+
+        if pd.isna(macd):
+                macd = 0
+
+        if pd.isna(atr):
+                atr = current_price * 0.02
+
+        # ============================================
+        # RETURNS
+        # ============================================
+
+        returns_1m = (
+
+            (
+                close_prices.iloc[-1]
+                /
+                close_prices.iloc[-22]
+            ) - 1
+
+            if len(close_prices) > 22
+
+            else 0
+
+        )
+
+        returns_3m = (
+
+            (
+                close_prices.iloc[-1]
+                /
+                close_prices.iloc[-66]
+            ) - 1
+
+            if len(close_prices) > 66
+
+            else 0
+
+        )
+
+        returns_6m = (
+
+            (
+                close_prices.iloc[-1]
+                /
+                close_prices.iloc[0]
+            ) - 1
+
+            if len(close_prices) > 1
+
+            else 0
+
+        )
+
+        # ============================================
+        # FAST INFO
+        # ============================================
+
+        try:
+
+            info = ticker.fast_info
+
+        except Exception:
+
+            info = {}
+
+        volume = info.get(
+            "lastVolume",
+            0
+        ) or 0
+
+        market_cap = info.get(
+            "marketCap",
+            0
+        ) or 0
+
+        # ============================================
+        # INSTITUTIONAL SCORE
+        # ============================================
+
+        institutional_score = 0
+
+        if market_cap > 500_000_000_000:
+            institutional_score += 25
+
+        elif market_cap > 100_000_000_000:
+            institutional_score += 18
+
+        elif market_cap > 10_000_000_000:
+            institutional_score += 10
+
+        if volume > 5_000_000:
+            institutional_score += 20
+
+        elif volume > 1_000_000:
+            institutional_score += 15
+
+        elif volume > 250_000:
+            institutional_score += 8
+
+        if returns_1m > 0.05:
+            institutional_score += 10
+
+        if returns_3m > 0.10:
+            institutional_score += 10
+
+        if returns_6m > 0.20:
+            institutional_score += 10
+
+        if 45 <= rsi <= 70:
+            institutional_score += 10
+
+        elif rsi > 80:
+            institutional_score -= 5
+
+        if current_price > sma_20:
+            institutional_score += 5
+
+        if current_price > sma_50:
+            institutional_score += 5
+
+        if macd > 0:
+            institutional_score += 5
+
+        if atr < current_price * 0.04:
+            institutional_score += 5
+
+        institutional_score = max(
+            0,
+            min(institutional_score, 100)
+        )
+
+        # ============================================
+        # SIGNAL ENGINE
+        # ============================================
+
+        confidence = round(
+            institutional_score * 0.95,
+            2
+        )
+
+        buy_probability = round(
+            confidence * 0.95,
+            2
+        )
+
+        trade_signal = classify_signal(
+            confidence
+        )
+
+        composite_score = round(
+
+            (
+                institutional_score
+                + confidence
+                + buy_probability
+            ) / 3,
+
+            2
+
+        )
+
+        # ============================================
+        # SUCCESS
+        # ============================================
+
+        print(f"SUCCESS : {stock}")
+
+        return {
+
+            "Stock": stock,
+
+            "Current Price": round(current_price, 2),
+
+            "Previous Close": round(previous_close, 2),
+
+            "Volume": volume,
+
+            "Market Cap": market_cap,
+
+            "1M Return": round(
+                returns_1m * 100,
+                2
+            ),
+
+            "3M Return": round(
+                returns_3m * 100,
+                2
+            ),
+
+            "6M Return": round(
+                returns_6m * 100,
+                2
+            ),
+
+            "RSI": round(rsi, 2),
+
+            "SMA20": round(sma_20, 2),
+
+            "SMA50": round(sma_50, 2),
+
+            "MACD": round(macd, 2),
+
+            "ATR": round(atr, 2),
+
+            "Institutional Score": institutional_score,
+
+            "Confidence": confidence,
+
+            "Buy Probability": buy_probability,
+
+            "Composite Score": composite_score,
+
+            "Trade Signal": trade_signal
+
+        }
+
+    except Exception:
+
+        print(f"FAILED : {stock}")
+
+        return None
 
         # =================================================
         # RETRY ENGINE
